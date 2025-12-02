@@ -541,7 +541,11 @@
 
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
 <script type="module">
-    const socket = io("http://localhost:3000");
+    const socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    transports: ['websocket', 'polling']
+  });
 
 
   document.getElementById("driverdel").addEventListener("click",function(){
