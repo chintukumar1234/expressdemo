@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transportation Helper - Information Page</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #e8eaee;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    header {
+      background: linear-gradient(90deg,#f7f9fc,rgb(50, 194, 230),#f7f9fc);
+      color: white;
+      padding: 20px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .container {
+      width: 90%;
+      max-width: 90%;
+      margin: -30px auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      color: #003e9f;
+      border-left: 4px solid #003e9f;
+      padding-left: 10px;
+    }
+
+    ul {
+      margin: 10px 0 20px 20px;
+    }
+
+    footer {
+      text-align: center;
+      background: #111;
+      color: white;
+      padding: 15px;
+      margin-top: 40px;
+    }
+
+    /* ------- Feedback Design ------- */
+
+    .feedback-box {
+      background: #f2f6ff;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 25px;
+      box-shadow: 0px 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .feedback-box h3 {
+      margin-bottom: 10px;
+    }
+
+    .stars span {
+      font-size: 32px;
+      cursor: pointer;
+      color: #ccc;
+      padding: 5px;
+    }
+
+    .stars span.selected {
+      color: gold;
+    }
+
+    textarea {
+      width: 100%;
+      height: 80px;
+      margin-top: 10px;
+      border-radius: 6px;
+      border: 1px solid #aaa;
+      padding: 10px;
+      resize: none;
+    }
+
+    .submit-btn {
+      margin-top: 15px;
+      background: #003e9f;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    .submit-btn:hover {
+      background: #0053d8;
+    }
+
+    .feedback-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 5px solid #003e9f;
+      margin-bottom: 15px;
+      box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .feedback-rating {
+      color: gold;
+      font-size: 20px;
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        width: 90%;
+        padding: 15px;
+      }
+      h1 {
+        font-size: 24px;
+      }
+      p {
+        font-size: 14px;
+      }
+      h2 {
+        font-size: 18px;
+      }
+      .submit-btn {
+        width:100%;
+      }
+    }
+  </style>
+
+</head>
+<body>
+
+<header>
+  <h1>Transportation Helper</h1>
+</header>
+
+<div class="container">
+
+  <h2>1. Transportation Helper — परिचय</h2>
+  <p>
+    “ट्रांसपोर्टेशन हेल्पर” एक वेब आधारित प्लेटफॉर्म है जो ड्राइवर और राइडर के बीच बुकिंग 
+    को आसान और सुरक्षित बनाता है। यह रियल-टाइम ट्रैकिंग, बुकिंग, पेमेंट और 
+    फीडबैक जैसी सुविधाएँ प्रदान करता है।
+  </p>
+
+  <h2>2. Objectives</h2>
+  <ul>
+    <li>To provide a reliable ride booking experience.</li>
+    <li>To help drivers with navigation and earnings.</li>
+    <li>To track rides live in real-time.</li>
+  </ul>
+
+  <h2>3. Rider Features</h2>
+  <ul>
+    <li>Ride booking</li>
+    <li>Live tracking</li>
+    <li>Fare estimation</li>
+    <li>Emergency SOS</li>
+  </ul>
+
+  <h2>4. Driver Features</h2>
+  <ul>
+    <li>Online/Offline ride control</li>
+    <li>Ride request alerts</li>
+    <li>Earnings overview</li>
+  </ul>
+
+  <h2>5. Administrator Features</h2>
+  <ul>
+    <li>Driver management</li>
+    <li>User management</li>
+    <li>Live map monitoring</li>
+  </ul>
+
+  <h2>6. System Workflow</h2>
+  <ul>
+    <li>Rider books a ride</li>
+    <li>Driver accepts</li>
+    <li>Ride starts → arrival</li>
+    <li>Payment & feedback</li>
+  </ul>
+
+  <h2>7. Conclusion</h2>
+  <p>Transportation Helper ensures safe, transparent, and easy travel for everyone.</p>
+
+  <!-- ---------------------------------------------
+       8. FEEDBACK SECTION STARTS HERE
+  ------------------------------------------------- -->
+
+  <h2>8. Rider Feedback</h2>
+
+  <div class="feedback-box">
+    <h3>अपनी यात्रा का अनुभव शेयर करें</h3>
+
+    <!-- Rating Stars -->
+    <div class="stars" id="starContainer">
+      <span data-value="1">★</span>
+      <span data-value="2">★</span>
+      <span data-value="3">★</span>
+      <span data-value="4">★</span>
+      <span data-value="5">★</span>
+    </div>
+
+    <!-- Feedback Message -->
+    <textarea id="feedbackMessage" placeholder="अपनी राय लिखें..."></textarea>
+
+    <button class="submit-btn" onclick="submitFeedback()">Submit Feedback</button>
+  </div>
+
+  <h3>🔽 Recent Feedback</h3>
+  <div id="feedbackList"></div>
+
+</div>
+
+<footer>
+  © 2025 Transportation Helper | Information Page
+</footer>
+
+
+
+<!-- ------------------------------------------------------
+     FIREBASE + FEEDBACK SCRIPT
+------------------------------------------------------- -->
+
+<script type="module">
+
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getDatabase, ref, set, push, onValue }
+    from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+  // ---------------- YOUR FIREBASE CONFIG ----------------
+  const firebaseConfig = {
+  apiKey: "AIzaSyCsZcn4VPhpnlgU0K_NPHPINjq9Qi5iVT8",
+  authDomain: "mydatabase-e7c01.firebaseapp.com",
+  databaseURL: "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
+  projectId: "mydatabase-e7c01",
+  storageBucket: "mydatabase-e7c01.firebasestorage.app",
+  messagingSenderId: "447471871540",
+  appId: "1:447471871540:web:d48721caa65174b1598c61",
+  measurementId: "G-80M4PND75H"
+};
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+
+  // -------------- STAR SELECTION ----------------
+  let selectedRating = 0;
+  const stars = document.querySelectorAll("#starContainer span");
+
+  stars.forEach(star => {
+    star.addEventListener("click", () => {
+      selectedRating = star.dataset.value;
+
+      // Reset
+      stars.forEach(s => s.classList.remove("selected"));
+
+      // Highlight stars
+      for (let i = 0; i < selectedRating; i++) {
+        stars[i].classList.add("selected");
+      }
+    });
+  });
+
+
+  // -------------- SUBMIT FEEDBACK ----------------
+  window.submitFeedback = function () {
+    const msg = document.getElementById("feedbackMessage").value;
+
+    if (selectedRating == 0) {
+      alert("Please select a rating!");
+      return;
+    }
+    if (msg.trim() === "") {
+      alert("Please enter feedback message!");
+      return;
+    }
+
+    const feedbackRef = push(ref(db, "feedback"));
+
+    set(feedbackRef, {
+      rating: selectedRating,
+      message: msg,
+    });
+
+    alert("Thank you for your feedback!");
+
+    // Reset inputs
+    document.getElementById("feedbackMessage").value = "";
+    selectedRating = 0;
+    stars.forEach(s => s.classList.remove("selected"));
+  };
+
+
+  // -------------- DISPLAY FEEDBACK ----------------
+  const feedbackList = document.getElementById("feedbackList");
+
+  onValue(ref(db, "feedback"), snapshot => {
+    feedbackList.innerHTML = "";
+
+    snapshot.forEach(item => {
+      const data = item.val();
+
+      feedbackList.innerHTML += `
+        <div class="feedback-card">
+          <div class="feedback-rating">${"★".repeat(data.rating)}</div>
+          <p>${data.message}</p>
+        </div>
+      `;
+    });
+  });
+
+</script>
+
+</body>
+</html>
