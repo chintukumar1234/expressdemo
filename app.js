@@ -283,48 +283,59 @@ io.on("connection", (socket) => {
   });
 });
 
-  // Rider location update
-  socket.on("riderLocation", async (pos) => {
-    if (typeof pos.lat !== "number" || typeof pos.lng !== "number") return;
+// Rider live location update
+socket.on("riderLocation", async (pos) => {
+  if (typeof pos.lat !== "number" || typeof pos.lng !== "number") return;
 
-    riders[socket.id] = { ...pos, id: socket.id };
+  // store rider locally (optional)
+  riders[socket.id] = { ...pos, id: socket.id };
 
-    const driverId = Object.keys(drivers).find(
-      (d) =>
-        drivers[d] &&
-        (drivers[d].Rider1_id === socket.id ||
-          drivers[d].Rider2_id === socket.id)
-    );
-    if (!driverId) return;
+  // find which driver this rider belongs to
+  const driverId = Object.keys(drivers).find(
+    (d) =>
+      drivers[d] &&
+      (drivers[d].Rider1_id === socket.id ||
+        drivers[d].Rider2_id === socket.id)
+  );
 
-    const driver = drivers[driverId];
-    let latKey = "",
-      lngKey = "";
+  if (!driverId) return;
 
-    if (driver.Rider1_id === socket.id) {
-      latKey = "Rider1_lat";
-      lngKey = "Rider1_lng";
-    } else {
-      latKey = "Rider2_lat";
-      lngKey = "Rider2_lng";
-    }
+  const driver = drivers[driverId];
 
-    driver[latKey] = pos.lat;
-    driver[lngKey] = pos.lng;
+  let latKey = "";
+  let lngKey = "";
 
-    await update(ref(db, `drivers/${driverId}`), {
-      [latKey]: pos.lat,
-      [lngKey]: pos.lng,
-    });
+  // ❗ Identify correct slot and don't change slot
+  if (driver.Rider1_id === socket.id) {
+    latKey = "Rider1_lat";
+    lngKey = "Rider1_lng";
+  } else if (driver.Rider2_id === socket.id) {
+    latKey = "Rider2_lat";
+    lngKey = "Rider2_lng";
+  } else {
+    return; // rider not in any slot
+  }
 
-    if (driver.socketId) {
-      io.to(driver.socketId).emit("riderPositionUpdate", {
-        riderId: socket.id,
-        lat: pos.lat,
-        lng: pos.lng,
-      });
-    }
+  // update in memory
+  driver[latKey] = pos.lat;
+  driver[lngKey] = pos.lng;
+
+  // update in Firebase
+  await update(ref(db, `drivers/${driverId}`), {
+    [latKey]: pos.lat,
+    [lngKey]: pos.lng,
   });
+
+  // send live update to driver app (if connected)
+  if (driver.socketId) {
+    io.to(driver.socketId).emit("riderPositionUpdate", {
+      riderId: socket.id,
+      lat: pos.lat,
+      lng: pos.lng,
+    });
+  }
+});
+
 
   // Book driver
   socket.on("bookDriver", async (data) => {
