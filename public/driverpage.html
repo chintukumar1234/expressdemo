@@ -11,130 +11,139 @@
 
   <!-- Firebase (module) -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getDatabase, ref, get, onValue, remove ,update} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+/* ----------------------- FIREBASE IMPORTS ------------------------ */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, get, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-    // 🔹 Firebase configuration (keep yours)
-    const firebaseConfig = {
+/* ----------------------- FIREBASE CONFIG ------------------------- */
+const firebaseConfig = {
   apiKey: "AIzaSyCsZcn4VPhpnlgU0K_NPHPINjq9Qi5iVT8",
   authDomain: "mydatabase-e7c01.firebaseapp.com",
-  databaseURL:
-    "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
+  databaseURL: "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
   projectId: "mydatabase-e7c01",
   storageBucket: "mydatabase-e7c01.firebasestorage.app",
   messagingSenderId: "447471871540",
-  appId: "1:447471871540:web:d48721caa65174b1598c61",
+  appId: "1:447471871540:web:d48721caa65174b1598c61"
 };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+/* ---------------------- INITIALIZE FIREBASE ---------------------- */
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+import { io } from "https://cdn.socket.io/4.7.4/socket.io.esm.min.js";
 
-    // Global variable for all drivers
-    let allDrivers = {};
 
-    // 🔸 Listen for driver data
-    onValue(ref(db, "drivers"), snapshot => {
-      allDrivers = snapshot.exists() ? snapshot.val() : {};
-      renderTable();
-    });
+/* ---------------------- GLOBAL STORAGE --------------------------- */
+let allDrivers = {};
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  transports: ["websocket", "polling"]
+});
 
-    // 🔸 Render driver table
-    window.renderTable = function () {
-      const tbody = document.getElementById("driverTableBody");
-      tbody.innerHTML = "";
-      let count = 0;
-      const q = document.getElementById("searchInput").value.trim().toLowerCase();
 
-      for (const id in allDrivers) {
-        const d = allDrivers[id];
-        if (!d) continue;
+/* ---------------------- LIVE FETCH DRIVERS ----------------------- */
+onValue(ref(db, "drivers"), snapshot => {
+  allDrivers = snapshot.exists() ? snapshot.val() : {};
+  renderTable();
+});
 
-        // search filter
-        if (q && !((d.name||"").toLowerCase().includes(q) || (d.gmail||"").toLowerCase().includes(q) || (d.mobile||"").includes(q)))
-          continue;
+/* ------------------------ RENDER TABLE --------------------------- */
+window.renderTable = function () {
+  const tbody = document.getElementById("driverTableBody");
+  tbody.innerHTML = "";
+  let count = 0;
 
-        count++;
-        const tr = document.createElement("tr");
-        tr.className = d.online ? "onlineRow" : "offlineRow";
+  const q = document.getElementById("searchInput").value.trim().toLowerCase();
 
-        const rider1 = d.rider1_id || "-";
-        const rider2 = d.rider2_id || "-";
-        const code1 = d.booking1_code || "-";
-        const code2 = d.booking2_code || "-";
+  for (const id in allDrivers) {
+    const d = allDrivers[id];
+    if (!d) continue;
 
-        tr.innerHTML = `
-          <td>${d.name || "-"}</td>
-          <td>${d.gmail || "-"}</td>
-          <td>${d.mobile || "-"}</td>
-          <td>${d.online ? "🟢 Online" : "🔴 Offline"}</td>
-          <td>
-            <div>👤 Rider1: ${rider1}</div>
-            <div>Code: ${code1}</div>
-            <hr>
-            <div>👤 Rider2: ${rider2}</div>
-            <div>Code: ${code2}</div>
-          </td>
-          <td>
-            <button class="viewMapBtn" data-id="${id}">🗺️ View Map</button>
-            <button class="deleteBtn" data-id="${id}">🗑️ Delete</button>
-          </td>
-        `;
-        tbody.appendChild(tr);
-      }
-
-      document.getElementById("driverCount").innerText = count;
-
-      // 🔸 Attach Delete Button Functionality
-      document.querySelectorAll(".deleteBtn").forEach(btn => {
-        btn.onclick = async (e) => {
-          const id = e.target.dataset.id;
-
-          const code = prompt("🔐 Enter admin code to delete this driver:");
-          if (code !== "Chintu@Admin2025") {
-            alert("❌ Invalid code. You are not authorized to delete this driver.");
-            return;
-          }
-
-          if (!confirm("⚠️ Are you sure you want to delete this driver?")) return;
-
-          try {
-            await remove(ref(db, "drivers/" + id));
-            alert("✅ Driver deleted successfully!");
-          } catch (error) {
-            console.error(error);
-            alert("⚠️ Failed to delete driver. Check console for details.");
-          }
-        };
-      });
-
-      // 🔸 Attach View Map Button Functionality
-      document.querySelectorAll(".viewMapBtn").forEach(btn => {
-        btn.onclick = async (e) => {
-          const id = btn.dataset.id;
-          await openDriverMap(id);
-        };
-      });
-    };
-
-    // --------------------------------------------------------------------------------
-    // Leaflet + OSRM openDriverMap implementation (replaces Google Maps logic)
-    // --------------------------------------------------------------------------------
-
-    // make sure global Leaflet 'L' exists (we included leaflet.js separately)
-    if (typeof window.L === "undefined") {
-      console.error("Leaflet (L) not found. Make sure you included Leaflet script before this module.");
+    // search
+    if (q &&
+      !((d.name || "").toLowerCase().includes(q) ||
+        (d.gmail || "").toLowerCase().includes(q) ||
+        (d.mobile || "").includes(q))) {
+      continue;
     }
 
-async function openDriverMap(driverId) {
+    count++;
 
-  // ---------- POPUP + MAP SETUP ----------
+    const tr = document.createElement("tr");
+    tr.className = d.online ? "onlineRow" : "offlineRow";
+
+    tr.innerHTML = `
+      <td>${d.name || "-"}</td>
+      <td>${d.gmail || "-"}</td>
+      <td>${d.mobile || "-"}</td>
+      <td>${d.online ? "🟢 Online" : "🔴 Offline"}</td>
+
+      <td>
+        <div>👤 Rider1: ${d.Rider1_id || "-"}</div>
+        <div>Code: ${d.Booking1_code || "-"}</div>
+        <hr>
+        <div>👤 Rider2: ${d.Rider2_id || "-"}</div>
+        <div>Code: ${d.Booking2_code || "-"}</div>
+      </td>
+
+      <td>
+        <button class="viewMapBtn" data-id="${id}">🗺️ View Map</button>
+        <button class="deleteBtn" data-id="${id}">🗑️ Delete</button>
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  }
+
+  document.getElementById("driverCount").innerText = count;
+
+  /* ------------ DELETE BUTTON HANDLER ------------ */
+  document.querySelectorAll(".deleteBtn").forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+
+      const code = prompt("🔐 Enter admin code to delete this driver:");
+      if (code !== "Chintu@Admin2025") {
+        alert("❌ Invalid code.");
+        return;
+      }
+
+      if (!confirm("⚠️ Delete this driver?")) return;
+
+      try {
+        await remove(ref(db, "drivers/" + id));
+        alert("✅ Driver deleted!");
+      } catch (err) {
+        console.error(err);
+        alert("❌ Failed to delete driver");
+      }
+    };
+  });
+
+  /* ------------ VIEW MAP HANDLER ------------ */
+  document.querySelectorAll(".viewMapBtn").forEach(btn => {
+    btn.onclick = () => {
+      openDriverMap(btn.dataset.id);
+    };
+  });
+};
+
+/* ====================================================================
+                       LEAFLET + OSRM MAP VIEW
+==================================================================== */
+
+if (!window.L) {
+  console.error("Leaflet not loaded! Include leaflet.js before this script.");
+}
+
+async function openDriverMap(driverId) {
   const popup = document.getElementById("mapPopup");
   popup.style.display = "flex";
 
   const mapEl = document.getElementById("mapCanvas");
   mapEl.innerHTML = "";
 
-  // Get Driver
+  /* ------------ FETCH DRIVER ------------ */
   const snap = await get(ref(db, "drivers/" + driverId));
   if (!snap.exists()) {
     alert("Driver not found");
@@ -142,18 +151,19 @@ async function openDriverMap(driverId) {
   }
 
   let driver = snap.val();
-  if (!driver.lat || !driver.lng) {
-    alert("Driver has no location data.");
+  if (!driver.Driver_lat || !driver.Driver_lng) {
+    alert("Driver has no location");
     return;
   }
 
-  // Leaflet map
-  const map = L.map(mapEl, { zoomControl: true });
-  map.setView([driver.lat, driver.lng], 15);  // IMPORTANT: Without this map won't show
+  /* ------------ MAP SETUP ------------ */
+  const map = L.map(mapEl);
+  map.setView([driver.Driver_lat, driver.Driver_lng], 15);
 
-  const streetLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19
-  }).addTo(map);
+  const streetLayer = L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 19 }
+  ).addTo(map);
 
   const satelliteLayer = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -166,72 +176,73 @@ async function openDriverMap(driverId) {
     { position: "topright" }
   ).addTo(map);
 
-  // Driver icon
+  /* ------------ ICONS ------------ */
   const driverIcon = L.icon({
     iconUrl: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
     iconSize: [32, 32],
     iconAnchor: [16, 32]
   });
 
-  // Rider icon
   const riderIcon = L.icon({
     iconUrl: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
     iconSize: [28, 28],
     iconAnchor: [14, 28]
   });
 
-  const riderIcone = L.divIcon({
-  className: "custom-rider",
-  html: `
-    <div class="rider-marker">
-      <img src="https://cdn-icons-png.flaticon.com/128/1783/1783356.png">
-    </div>
-  `,
-  iconSize: [40, 40],
-  iconAnchor: [15, 42]
-});
+  const riderLiveIcon = L.divIcon({
+    className: "custom-rider",
+    html: `
+      <div class="rider-marker">
+        <img src="https://cdn-icons-png.flaticon.com/128/1783/1783356.png">
+      </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [15, 42]
+  });
 
+  /* ------------ DRIVER MARKER ------------ */
+  const driverMarker = L.marker(
+    [driver.Driver_lat, driver.Driver_lng],
+    { icon: driverIcon }
+  ).addTo(map);
 
-  // Driver marker
-  const driverMarker = L.marker([driver.lat, driver.lng], { icon: driverIcon })
-    .addTo(map)
-    .bindTooltip(driver.name || "Driver");
-
-
-  // ---------- RIDER STATIC MARKERS ----------
+  /* ------------ RIDER STATIC MARKERS ------------ */
   const riderPoints = [];
 
-  if (driver.rider1_lat && driver.rider1_lng)
+  if (driver.Rider1_lat && driver.Rider1_lng) {
     riderPoints.push({
-      lat: Number(driver.rider1_lat),
-      lng: Number(driver.rider1_lng),
+      lat: Number(driver.Rider1_lat),
+      lng: Number(driver.Rider1_lng),
       label: "Rider 1"
     });
+  }
 
-  if (driver.rider2_lat && driver.rider2_lng)
+  if (driver.Rider2_lat && driver.Rider2_lng) {
     riderPoints.push({
-      lat: Number(driver.rider2_lat),
-      lng: Number(driver.rider2_lng),
+      lat: Number(driver.Rider2_lat),
+      lng: Number(driver.Rider2_lng),
       label: "Rider 2"
     });
+  }
 
-  const riderMarkers = riderPoints.map(rp =>
-    L.marker([rp.lat, rp.lng], { icon: riderIcon })
+  const riderMarkers = riderPoints.map(r =>
+    L.marker([r.lat, r.lng], { icon: riderIcon })
       .addTo(map)
-      .bindTooltip(rp.label)
+      .bindTooltip(r.label)
   );
 
-
-  // ---------- OSRM ROUTING ----------
-  async function getOsrmRoute(start, end) {
+  /* ------------ OSRM ROUTING ------------ */
+  async function getOsrmRoute(a, b) {
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+      const url =
+        `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+
       const res = await fetch(url);
-      const js = await res.json();
+      const json = await res.json();
 
-      if (!js.routes || !js.routes[0]) return null;
+      if (!json.routes) return null;
 
-      return js.routes[0].geometry.coordinates.map(c => ({
+      return json.routes[0].geometry.coordinates.map(c => ({
         lat: c[1],
         lng: c[0]
       }));
@@ -244,37 +255,33 @@ async function openDriverMap(driverId) {
   let activePolylines = [];
 
   async function drawRoutes(fromPos) {
-    // Remove all old
     activePolylines.forEach(p => p.remove());
     activePolylines = [];
 
     for (let i = 0; i < riderPoints.length; i++) {
-      const rp = riderPoints[i];
-      const coords = await getOsrmRoute(fromPos, rp);
-      if (!coords) continue;
+      const route = await getOsrmRoute(fromPos, riderPoints[i]);
+      if (!route) continue;
 
-      const routeLine = L.polyline([], {
+      const line = L.polyline([], {
         color: i === 0 ? "#0078ff" : "#ff4081",
         weight: 5
       }).addTo(map);
 
-      activePolylines.push(routeLine);
+      activePolylines.push(line);
 
-      // draw smoothly
-      let ix = 0;
-      (function anim() {
-        const end = Math.min(ix + 6, coords.length);
-        for (let k = ix; k < end; k++) routeLine.addLatLng(coords[k]);
-        ix = end;
-        if (ix < coords.length) requestAnimationFrame(anim);
+      let idx = 0;
+      (function animate() {
+        const end = Math.min(idx + 5, route.length);
+        for (let k = idx; k < end; k++) line.addLatLng(route[k]);
+        idx = end;
+        if (idx < route.length) requestAnimationFrame(animate);
       })();
     }
   }
 
-  await drawRoutes({ lat: driver.lat, lng: driver.lng });
+  await drawRoutes({ lat: driver.Driver_lat, lng: driver.Driver_lng });
 
-
-  // ---------- DRIVER MOVEMENT ANIMATION ----------
+  /* ------------ DRIVER LIVE MOVEMENT ------------ */
   function haversine(p1, p2) {
     const R = 6371;
     const dLat = (p2.lat - p1.lat) * Math.PI / 180;
@@ -289,11 +296,11 @@ async function openDriverMap(driverId) {
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  function animateMarker(marker, path, duration = 1200) {
+  async function animateMarker(marker, path, duration = 1000) {
     return new Promise(resolve => {
       if (!path || path.length < 2) return resolve();
 
-      const startTime = performance.now();
+      const start = performance.now();
 
       const dist = [0];
       for (let i = 1; i < path.length; i++)
@@ -303,22 +310,21 @@ async function openDriverMap(driverId) {
       if (total === 0) return resolve();
 
       function frame(now) {
-        const t = Math.min((now - startTime) / duration, 1);
-        const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        const t = Math.min((now - start) / duration, 1);
+        const target = t * total;
 
-        const target = eased * total;
         let i = 0;
-
         while (i < dist.length - 1 && dist[i + 1] < target) i++;
 
-        const ratio = (target - dist[i]) / (dist[i + 1] - dist[i]);
+        const r = (target - dist[i]) / (dist[i + 1] - dist[i]);
+
         const p1 = path[i];
         const p2 = path[i + 1];
 
-        const lat = p1.lat + (p2.lat - p1.lat) * ratio;
-        const lng = p1.lng + (p2.lng - p1.lng) * ratio;
-
-        marker.setLatLng([lat, lng]);
+        marker.setLatLng([
+          p1.lat + (p2.lat - p1.lat) * r,
+          p1.lng + (p2.lng - p1.lng) * r
+        ]);
 
         if (t < 1) requestAnimationFrame(frame);
         else resolve();
@@ -328,65 +334,61 @@ async function openDriverMap(driverId) {
     });
   }
 
+  socket.on("riderPositionUpdate", async ({ riderId, lat, lng }) => {
+  const snap = await get(ref(db, "drivers"));
+  const drivers = snap.val();
+  if (!drivers) return;
 
-  // ---------- DRIVER LIVE UPDATE ----------
-  let lastPos = { lat: driver.lat, lng: driver.lng };
+  for (let driverId in drivers) {
+    let d = drivers[driverId];
 
-  onValue(ref(db, "drivers/" + driverId), async snap => {
-    if (!snap.exists()) return;
-
-    const d = snap.val();
-    if (!d.lat || !d.lng) return;
-
-    const newPos = { lat: d.lat, lng: d.lng };
-    const current = driverMarker.getLatLng();
-
-    const route = await getOsrmRoute(current, newPos);
-    await animateMarker(driverMarker, route || [current, newPos], 1000);
-
-    // Redraw if moved >100m
-    if (haversine(lastPos, newPos) > 0.1) {
-      lastPos = newPos;
-      drawRoutes(newPos);
+    // Rider is in slot 1
+    if (d.Rider1_id === riderId) {
+      await update(ref(db, "drivers/" + driverId), {
+        Rider1_lat: lat,
+        Rider1_lng: lng
+      });
+      return;
     }
-  });
+
+    // Rider is in slot 2
+    if (d.Rider2_id === riderId) {
+      await update(ref(db, "drivers/" + driverId), {
+        Rider2_lat: lat,
+        Rider2_lng: lng
+      });
+      return;
+    }
+  }
+});
 
 
-  // ---------- RIDER LIVE LOCATION ----------
+  /* ------------ RIDER LIVE LOCATION ------------ */
   let riderLiveMarker = null;
 
   if (navigator.geolocation) {
     navigator.geolocation.watchPosition(
       pos => {
-        const { latitude: lat, longitude: lng, speed, accuracy } = pos.coords;
-        const ts = Date.now();
+        const { latitude, longitude } = pos.coords;
 
-        // Save rider live location
-        update(ref(db, "riders/" + driverId), {
-          lat, lng, speed, accuracy, ts
-        });
-
-        // Marker create / move
         if (!riderLiveMarker) {
-          riderLiveMarker = L.marker([lat, lng], { icon: riderIcone })
-            .addTo(map)
-            .bindTooltip("Live Rider ");
+          riderLiveMarker = L.marker([latitude, longitude], {
+            icon: riderLiveIcon
+          }).addTo(map);
         } else {
-          riderLiveMarker.setLatLng([lat, lng]);
+          riderLiveMarker.setLatLng([latitude, longitude]);
         }
 
         if (window.autoCenterRider) {
-          map.setView([lat, lng]);
+          map.setView([latitude, longitude]);
         }
       },
-      err => alert("Location Error: " + err.message),
+      err => alert("Location error: " + err.message),
       { enableHighAccuracy: true }
     );
   }
 
-
-  // ---------- MAP CLEANUP ----------
-  popup._leafletMap = map;
+  /* ------------ CLEANUP ON CLOSE ------------ */
   popup._leafletCleanup = () => {
     try {
       activePolylines.forEach(p => p.remove());
@@ -394,40 +396,33 @@ async function openDriverMap(driverId) {
       if (riderLiveMarker) riderLiveMarker.remove();
       driverMarker.remove();
       map.remove();
-    } catch (e) {}
+    } catch { }
   };
 }
 
+/* ------------------------- CLOSE MAP ------------------------- */
+window.closeMapPopup = function () {
+  const popup = document.getElementById("mapPopup");
+  if (!popup) return;
 
+  if (popup._leafletCleanup) popup._leafletCleanup();
+  popup.style.display = "none";
+};
 
-    // Expose globally so renderTable can call
-    window.openDriverMap = openDriverMap;
-
-    // 🔸 Close map popup
-    window.closeMapPopup = function () {
-      const popup = document.getElementById("mapPopup");
-      if (!popup) return;
-      if (popup._leafletCleanup) popup._leafletCleanup();
-      popup._leafletCleanup = null;
-      popup._leafletMap = null;
-      popup.style.display = "none";
-    };
-    // 🔸 Fullscreen Toggle
-document.addEventListener("click", function (e) {
+/* ------------------------- FULLSCREEN ------------------------- */
+document.addEventListener("click", e => {
   if (e.target.id === "toggleFullscreen") {
-    const mapBox = document.getElementById("mapBox");
+    const el = document.getElementById("mapBox");
 
     if (!document.fullscreenElement) {
-      mapBox.requestFullscreen().catch(err => {
-        console.error("Fullscreen error:", err);
-      });
+      el.requestFullscreen().catch(err => console.error(err));
     } else {
       document.exitFullscreen();
     }
   }
 });
+</script>
 
-  </script>
 
   <!-- Leaflet JS (non-module; must be included before Leaflet use) -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
