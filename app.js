@@ -274,8 +274,8 @@ socket.on("driverLocation", async ({ lat, lng, speed, accuracy }) => {
       const driverId = Object.keys(drivers).find(
         (d) =>
           drivers[d] &&
-          (drivers[d].rider1_id === socket.id ||
-            drivers[d].rider2_id === socket.id)
+          (drivers[d].Rider1_id === socket.id ||
+            drivers[d].Rider2_id === socket.id)
       );
       if (!driverId) return;
       const driver = drivers[driverId];
