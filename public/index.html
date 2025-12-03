@@ -557,6 +557,8 @@
   const destinationInput = document.getElementById('destination');
   
     // 🌍 Send rider's real GPS location to server
+   let driverData={};
+   let myCoords = null;
   if (navigator.geolocation) {
     navigator.geolocation.watchPosition(
       (pos) => {
@@ -569,6 +571,10 @@
   } else {
     alert("Geolocation is not supported in your browser.");
   }
+
+  socket.on('updateDrivers', (drivers) => {
+    driversData = drivers;
+  });
 
     showDriversBtn.addEventListener('click', () => {
     const pickup = pickupInput.value.trim();
@@ -711,13 +717,14 @@ window.updateDriverList = updateDriverList;
     alert("Please enter pickup and destination!");
     return;
   }
-
-  // Get rider location
-  navigator.geolocation.getCurrentPosition((pos) => {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-
+ const lat = myCoords ? myCoords.lat : null;
+const lng = myCoords ? myCoords.lng : null;
     // Prepare full booking data object
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+  alert("❌ Unable to get your location. Please enable GPS or try again.");
+  return;
+}
+
     const bookingData = {
       driverId,
       riderId:Math.random().toString(36).substring(2, 12).toUpperCase(),             // You can generate real ID later
@@ -736,9 +743,7 @@ window.updateDriverList = updateDriverList;
     destinationInput.value = "";
     socket.emit("bookDriver", bookingData);
 
-  }, () => {
-    alert("❌ Location access denied!");
-  });
+  
 }
 
     // =====================================================
