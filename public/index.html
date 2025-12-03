@@ -555,6 +555,20 @@
   const driversList = document.getElementById('driversList');
   const pickupInput = document.getElementById('pickup');
   const destinationInput = document.getElementById('destination');
+  
+    // 🌍 Send rider's real GPS location to server
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(
+      (pos) => {
+        myCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        socket.emit('riderLocation', myCoords);
+      },
+      (err) => console.warn("Location access denied:", err),
+      { enableHighAccuracy: true, maximumAge: 10000 }
+    );
+  } else {
+    alert("Geolocation is not supported in your browser.");
+  }
 
     showDriversBtn.addEventListener('click', () => {
     const pickup = pickupInput.value.trim();
