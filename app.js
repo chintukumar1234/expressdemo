@@ -416,7 +416,7 @@ io.on("connection", (socket) => {
     console.log("🔴 Socket disconnected:", socket.id);
     if (socket.driverId) {
       try {
-        await update(ref(db, `drivers/${socket.driverId}`), { online: 0 });
+        await update(ref(db, `drivers/${socket.driverId}`), { online: 1 });
       } catch (err) {
         console.error("❌ disconnect update error:", err);
       }

@@ -235,43 +235,56 @@ routeModeEl.addEventListener("change", ()=> {
 clearByCodeBtn.addEventListener("click", clearByCode);
 
 /* ================= Booking / rider events ================= */
-socket.on("bookingConfirmed", ({ RiderId, lat, lng, bookingCode }) => {
-  if (slots.s1.RiderId === RiderId || slots.s2.RiderId === RiderId) return;
+socket.on("bookingConfirmed", ({ riderId, lat, lng, bookingCode }) => {
+  // Already assigned?
+  if (slots.s1.riderId === riderId || slots.s2.riderId === riderId) return;
 
-  const emptySlot = !slots.s1.RiderId ? "s1" : (!slots.s2.RiderId ? "s2" : null);
+  const emptySlot = !slots.s1.riderId ? "s1" : (!slots.s2.riderId ? "s2" : null);
   if (!emptySlot) {
-    alert("New booking arrived but you already have 2 riders.");
+    alert("You already have 2 riders.");
     return;
   }
 
-  // Save booking info
-  slots[emptySlot].RiderId = RiderId;
-  slots[emptySlot].bookingCode = bookingCode || "—"; // ✅ show bookingCode
-  slots[emptySlot].marker = createRiderMarker(lat, lng, RiderId);
+  slots[emptySlot].riderId = riderId;
+  slots[emptySlot].bookingCode = bookingCode || "—";
+
+  slots[emptySlot].marker = createRiderMarker(lat, lng, riderId);
+
   updateSlotInfo(emptySlot);
   createRoute(emptySlot);
 });
-// Rider location updates (server emits to driver)
+
 socket.on("riderPositionUpdate", ({ riderId, lat, lng }) => {
-  // find slot
-  const slotKey = (slots.s1.riderId === riderId) ? "s1" : (slots.s2.riderId === riderId ? "s2" : null);
+  let slotKey = null;
+
+  if (slots.s1.riderId === riderId) slotKey = "s1";
+  else if (slots.s2.riderId === riderId) slotKey = "s2";
+
+  // If rider not found but a free slot exists → assign
   if (!slotKey) {
-    // if there's an empty slot, attach to it
-    const emptySlot = !slots.s1.riderId ? "s1" : (!slots.s2.riderId ? "s2" : null);
-    if (!emptySlot) return; // both full — ignore
-    slots[emptySlot].riderId = riderId;
-    slots[emptySlot].marker = createRiderMarker(lat, lng, riderId);
-    updateSlotInfo(emptySlot);
-    createRoute(emptySlot);
+    slotKey = !slots.s1.riderId ? "s1" :
+              (!slots.s2.riderId ? "s2" : null);
+
+    if (!slotKey) return; // no free slot
+
+    slots[slotKey].riderId = riderId;
+    slots[slotKey].marker = createRiderMarker(lat, lng, riderId);
+    updateSlotInfo(slotKey);
+    createRoute(slotKey);
     return;
   }
 
-  // update marker and route
-  if (slots[slotKey].marker) slots[slotKey].marker.setLatLng([lat, lng]);
-  else slots[slotKey].marker = createRiderMarker(lat, lng, riderId);
+  // Update marker & route
+  if (slots[slotKey].marker) {
+    slots[slotKey].marker.setLatLng([lat, lng]);
+  } else {
+    slots[slotKey].marker = createRiderMarker(lat, lng, riderId);
+  }
+
   updateSlotInfo(slotKey);
   updateRoute(slotKey);
 });
+
 
 /* ================= Marker & routing utilities ================= */
 function createRiderMarker(lat, lng, riderId) {
