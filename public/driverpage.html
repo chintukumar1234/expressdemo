@@ -18,7 +18,8 @@
     const firebaseConfig = {
   apiKey: "AIzaSyCsZcn4VPhpnlgU0K_NPHPINjq9Qi5iVT8",
   authDomain: "mydatabase-e7c01.firebaseapp.com",
-  databaseURL: "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
+  databaseURL:
+    "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
   projectId: "mydatabase-e7c01",
   storageBucket: "mydatabase-e7c01.firebasestorage.app",
   messagingSenderId: "447471871540",
@@ -56,10 +57,10 @@
         const tr = document.createElement("tr");
         tr.className = d.online ? "onlineRow" : "offlineRow";
 
-        const rider1 = d.Rider1_id || "-";
-        const rider2 = d.Rider2_id || "-";
-        const code1 = d.Booking1_code || "-";
-        const code2 = d.Booking2_code || "-";
+        const rider1 = d.rider1_id || "-";
+        const rider2 = d.rider2_id || "-";
+        const code1 = d.booking1_code || "-";
+        const code2 = d.booking2_code || "-";
 
         tr.innerHTML = `
           <td>${d.name || "-"}</td>
@@ -200,17 +201,17 @@ async function openDriverMap(driverId) {
   // ---------- RIDER STATIC MARKERS ----------
   const riderPoints = [];
 
-  if (driver.Rider1_lat && driver.Rider1_lng)
+  if (driver.rider1_lat && driver.rider1_lng)
     riderPoints.push({
-      lat: Number(driver.Rider1_lat),
-      lng: Number(driver.Rider1_lng),
+      lat: Number(driver.rider1_lat),
+      lng: Number(driver.rider1_lng),
       label: "Rider 1"
     });
 
-  if (driver.Rider2_lat && driver.Rider2_lng)
+  if (driver.rider2_lat && driver.rider2_lng)
     riderPoints.push({
-      lat: Number(driver.Rider2_lat),
-      lng: Number(driver.Rider2_lng),
+      lat: Number(driver.rider2_lat),
+      lng: Number(driver.rider2_lng),
       label: "Rider 2"
     });
 
@@ -361,7 +362,7 @@ async function openDriverMap(driverId) {
         const ts = Date.now();
 
         // Save rider live location
-        update(ref(db, "drivers/" + driverId), {
+        update(ref(db, "riders/" + driverId), {
           lat, lng, speed, accuracy, ts
         });
 
