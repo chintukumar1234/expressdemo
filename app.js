@@ -156,8 +156,8 @@ io.on("connection", (socket) => {
       drivers[driverId] = {
         socketId: socket.id,
         online: 1,
-        Driver_lat: d.lat,
-        Driver_lng: d.lng,
+        Driver_lat: d.Driver_lat,
+        Driver_lng: d.Driver_lng,
         Rider1_id: d.Rider1_id,
         Rider2_id: d.Rider2_id,
         Booking1_code: d.Booking1_code,
