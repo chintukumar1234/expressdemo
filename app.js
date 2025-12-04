@@ -20,8 +20,7 @@ import {
 const firebaseConfig = {
   apiKey: "AIzaSyCsZcn4VPhpnlgU0K_NPHPINjq9Qi5iVT8",
   authDomain: "mydatabase-e7c01.firebaseapp.com",
-  databaseURL:
-    "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
+  databaseURL: "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
   projectId: "mydatabase-e7c01",
   storageBucket: "mydatabase-e7c01.firebasestorage.app",
   messagingSenderId: "447471871540",
@@ -56,10 +55,16 @@ const io = new Server(server, {
 // Add driver
 app.post("/insert", async (req, res) => {
   try {
-    const { name, gmail, password, mobile, lat, lng } = req.body;
+    const { name, gmail, password, mobile } = req.body;
+    let { lat, lng } = req.body;
+
     if (!name || !gmail || !password || !mobile) {
       return res.status(400).send("All fields are required.");
     }
+
+    // normalize lat/lng
+    lat = lat === undefined || lat === null || lat === "" ? null : Number(lat);
+    lng = lng === undefined || lng === null || lng === "" ? null : Number(lng);
 
     const newDriverRef = push(ref(db, "drivers"));
     await set(newDriverRef, {
@@ -67,7 +72,7 @@ app.post("/insert", async (req, res) => {
       gmail,
       password,
       mobile,
-      online: 1,
+      online: 1, // driver added as online by default
 
       // Rider1 details
       Rider1_id: null,
@@ -75,6 +80,8 @@ app.post("/insert", async (req, res) => {
       Rider1_created_at: null,
       Rider1_lat: null,
       Rider1_lng: null,
+      Rider1_pickup: null,
+      Rider1_destination: null,
 
       // Rider2 details
       Rider2_id: null,
@@ -82,10 +89,15 @@ app.post("/insert", async (req, res) => {
       Rider2_created_at: null,
       Rider2_lat: null,
       Rider2_lng: null,
+      Rider2_pickup: null,
+      Rider2_destination: null,
 
       // Driver location
       Driver_lat: lat || null,
       Driver_lng: lng || null,
+
+      // socket id (set when driver connects)
+      socketId: null,
     });
 
     res.json({
@@ -102,11 +114,13 @@ app.post("/insert", async (req, res) => {
 app.post("/show", async (req, res) => {
   try {
     const snap = await get(ref(db, "drivers"));
-    let onlineDrivers = [];
+    const onlineDrivers = [];
+
+    if (!snap.exists()) return res.json({ count: 0, drivers: [] });
 
     snap.forEach((child) => {
       const driver = child.val();
-      if (driver.online === 1) {
+      if (driver && Number(driver.online) === 1) {
         onlineDrivers.push({ id: child.key, ...driver });
       }
     });
@@ -148,9 +162,7 @@ app.post("/updateOnline", async (req, res) => {
   try {
     const { userId, online } = req.body;
     if (!userId)
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing userId" });
+      return res.status(400).json({ success: false, message: "Missing userId" });
 
     await update(ref(db, `drivers/${userId}`), { online: online ? 1 : 0 });
     res.json({ success: true });
@@ -160,7 +172,7 @@ app.post("/updateOnline", async (req, res) => {
   }
 });
 
-// Delete rider by bookingCode
+// Delete rider by bookingCode (clear booking from driver slots)
 app.post("/target", async (req, res) => {
   try {
     const { bookingCode } = req.body;
@@ -177,31 +189,29 @@ app.post("/target", async (req, res) => {
       const driver = child.val();
       const driverRef = ref(db, `drivers/${child.key}`);
 
-      if (driver.Booking1_code === bookingCode) {
+      if (driver && driver.Booking1_code === bookingCode) {
         update(driverRef, {
           Booking1_code: null,
           Rider1_id: null,
           Rider1_created_at: null,
           Rider1_lat: null,
           Rider1_lng: null,
-          Rider1_destination:null,
-          Rider1_pickup:null
+          Rider1_destination: null,
+          Rider1_pickup: null,
         });
-        if (driver.socketId)
-          io.to(driver.socketId).emit("bookingCleared", { bookingCode });
+        if (driver.socketId) io.to(driver.socketId).emit("bookingCleared", { bookingCode });
         cleared = true;
-      } else if (driver.Booking2_code === bookingCode) {
+      } else if (driver && driver.Booking2_code === bookingCode) {
         update(driverRef, {
           Booking2_code: null,
           Rider2_id: null,
           Rider2_created_at: null,
           Rider2_lat: null,
           Rider2_lng: null,
-          Rider1_destination:null,
-          Rider2_pickup:null
+          Rider2_destination: null,
+          Rider2_pickup: null,
         });
-        if (driver.socketId)
-          io.to(driver.socketId).emit("bookingCleared", { bookingCode });
+        if (driver.socketId) io.to(driver.socketId).emit("bookingCleared", { bookingCode });
         cleared = true;
       }
     });
@@ -218,187 +228,197 @@ app.post("/target", async (req, res) => {
 });
 
 // ========== Socket.IO ==========
-let drivers = {};
-let riders = {};
+let driversMemory = {}; // local cache of connected drivers (socketId, location, slots)
+let ridersMemory = {};
 
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
 
   // Register driver
   socket.on("registerDriver", async ({ driverId }) => {
-    if (!driverId) return;
-    socket.driverId = driverId;
-    console.log("Driver registered:", socket.driverId);
-    const snap = await get(ref(db, `drivers/${driverId}`));
-    if (!snap.exists()) return;
+    try {
+      if (!driverId) return;
+      socket.driverId = driverId;
+      console.log("Driver registered (socket):", socket.driverId);
 
-    const d = snap.val();
-    drivers[driverId] = {
-      socketId: socket.id,
-      online: 1,
-      Driver_lat: d.Driver_lat,
-      Driver_lng: d.Driver_lng,
-      Rider1_id: d.Rider1_id,
-      Rider2_id: d.Rider2_id,
-      Booking1_code: d.Booking1_code,
-      Booking2_code: d.Booking2_code,
-      Rider1_lat: d.Rider1_lat,
-      Rider1_lng: d.Rider1_lng,
-      Rider2_lat: d.Rider2_lat,
-      Rider2_lng: d.Rider2_lng,
-    };
+      const snap = await get(ref(db, `drivers/${driverId}`));
+      if (!snap.exists()) return;
 
-    // Send active bookings to driver
-    if (d.Rider1_id)
-      socket.emit("bookingConfirmed", {
-        RiderId: d.Rider1_id,
-        lat: d.Rider1_lat,
-        lng: d.Rider1_lng,
-        bookingCode: d.Booking1_code,
-      });
-    if (d.Rider2_id)
-      socket.emit("bookingConfirmed", {
-        RiderId: d.Rider2_id,
-        lat: d.Rider2_lat,
-        lng: d.Rider2_lng,
-        bookingCode: d.Booking2_code,
-      });
+      const d = snap.val();
+
+      // update DB with socketId and mark online
+      await update(ref(db, `drivers/${driverId}`), { socketId: socket.id, online: 1 });
+
+      driversMemory[driverId] = {
+        socketId: socket.id,
+        online: 1,
+        Driver_lat: d.Driver_lat || null,
+        Driver_lng: d.Driver_lng || null,
+        Rider1_id: d.Rider1_id || null,
+        Rider2_id: d.Rider2_id || null,
+        Booking1_code: d.Booking1_code || null,
+        Booking2_code: d.Booking2_code || null,
+        Rider1_lat: d.Rider1_lat || null,
+        Rider1_lng: d.Rider1_lng || null,
+        Rider2_lat: d.Rider2_lat || null,
+        Rider2_lng: d.Rider2_lng || null,
+      };
+
+      // Send active bookings to driver
+      if (d.Rider1_id)
+        socket.emit("bookingConfirmed", {
+          RiderId: d.Rider1_id,
+          lat: d.Rider1_lat,
+          lng: d.Rider1_lng,
+          bookingCode: d.Booking1_code,
+        });
+      if (d.Rider2_id)
+        socket.emit("bookingConfirmed", {
+          RiderId: d.Rider2_id,
+          lat: d.Rider2_lat,
+          lng: d.Rider2_lng,
+          bookingCode: d.Booking2_code,
+        });
+    } catch (err) {
+      console.error("❌ registerDriver error:", err);
+    }
   });
 
-socket.on("driverLocation", async ({ lat, lng, speed, accuracy }) => {
-  if (!socket.driverId) return;
+  socket.on("driverLocation", async ({ lat, lng, speed, accuracy }) => {
+    try {
+      if (!socket.driverId) return;
 
-  // create memory entry if missing
-  if (!drivers[socket.driverId]) {
-    console.log("Creating missing driver memory:", socket.driverId);
-    drivers[socket.driverId] = {};
-  }
+      if (!driversMemory[socket.driverId]) driversMemory[socket.driverId] = {};
 
-  drivers[socket.driverId].Driver_lat = lat;
-  drivers[socket.driverId].Driver_lng = lng;
+      driversMemory[socket.driverId].Driver_lat = lat;
+      driversMemory[socket.driverId].Driver_lng = lng;
 
-  await update(ref(db, `drivers/${socket.driverId}`), {
-    Driver_lat: lat,
-    Driver_lng: lng,
+      await update(ref(db, `drivers/${socket.driverId}`), {
+        Driver_lat: lat,
+        Driver_lng: lng,
+      });
+    } catch (err) {
+      console.error("❌ driverLocation error:", err);
+    }
   });
-});
 
-socket.on("riderLiveLocation", async ({ riderId, lat, lng }) => {
-  if (typeof lat !== "number" || typeof lng !== "number") return;
+  socket.on("riderLiveLocation", async ({ riderId, lat, lng }) => {
+    try {
+      if (typeof lat !== "number" || typeof lng !== "number") return;
 
-  const snap = await get(ref(db, "drivers"));
-  const drivers = snap.val();
-  if (!drivers) return;
+      const snap = await get(ref(db, "drivers"));
+      const drivers = snap.val();
+      if (!drivers) return;
 
-  for (let driverId in drivers) {
-    let driver = drivers[driverId];
+      for (let driverId in drivers) {
+        let d = drivers[driverId];
 
-    // Rider found in slot 1
-    if (driver.Rider1_id === riderId) {
-      await update(ref(db, `drivers/${driverId}`), {
-        Rider1_lat: lat,
-        Rider1_lng: lng,
-      });
+        // Rider belongs to slot 1
+        if (d.Rider1_id === riderId) {
+          await update(ref(db, `drivers/${driverId}`), {
+            Rider1_lat: lat,
+            Rider1_lng: lng,
+          });
+          return;
+        }
 
-      // SEND LIVE LOCATION TO DRIVER
-      if (driver.socketId) {
-        io.to(driver.socketId).emit("riderPositionUpdate", {
-          riderId,
-          lat,
-          lng,
-        });
+        // Rider belongs to slot 2
+        if (d.Rider2_id === riderId) {
+          await update(ref(db, `drivers/${driverId}`), {
+            Rider2_lat: lat,
+            Rider2_lng: lng,
+          });
+          return;
+        }
       }
-
-      break;
+    } catch (err) {
+      console.error("❌ riderLiveLocation error:", err);
     }
-
-    // Rider found in slot 2
-    if (driver.Rider2_id === riderId) {
-      await update(ref(db, `drivers/${driverId}`), {
-        Rider2_lat: lat,
-        Rider2_lng: lng,
-      });
-
-      // SEND LIVE LOCATION TO DRIVER
-      if (driver.socketId) {
-        io.to(driver.socketId).emit("riderPositionUpdate", {
-          riderId,
-          lat,
-          lng,
-        });
-      }
-
-      break;
-    }
-  }
-});
-
+  });
 
   // Book driver
   socket.on("bookDriver", async (data) => {
-    if (!data.driverId || !data.riderId) {
-      return socket.emit("bookingStatus", {
-        status: "error",
-        message: "Driver or Rider ID missing",
+    try {
+      if (!data || !data.driverId || !data.riderId) {
+        return socket.emit("bookingStatus", {
+          status: "error",
+          message: "Driver or Rider ID missing",
+        });
+      }
+
+      const driverRef = ref(db, `drivers/${data.driverId}`);
+      const snap = await get(driverRef);
+      const driver = snap.val();
+      if (!driver)
+        return socket.emit("bookingStatus", { status: "error", message: "Driver not found" });
+
+      let slot = null;
+      if (!driver.Rider1_id) slot = "slot1";
+      else if (!driver.Rider2_id) slot = "slot2";
+      else return socket.emit("bookingFailed", "Driver full");
+
+      const bookingCode = Math.floor(100000 + Math.random() * 900000).toString();
+      let updateData = {};
+
+      if (slot === "slot1") {
+        updateData = {
+          Rider1_id: data.riderId,
+          Booking1_code: bookingCode,
+          Rider1_created_at: data.createdAt || Date.now(),
+          Rider1_lat: data.lat || null,
+          Rider1_lng: data.lng || null,
+          Rider1_pickup: data.pickup || null,
+          Rider1_destination: data.destination || null,
+        };
+      } else if (slot === "slot2") {
+        updateData = {
+          Rider2_id: data.riderId,
+          Booking2_code: bookingCode,
+          Rider2_created_at: data.createdAt || Date.now(),
+          Rider2_lat: data.lat || null,
+          Rider2_lng: data.lng || null,
+          Rider2_pickup: data.pickup || null,
+          Rider2_destination: data.destination || null,
+        };
+      }
+
+      await update(driverRef, updateData);
+
+      socket.emit("bookingStatus", { status: "success", slot, driverId: data.driverId });
+      socket.emit("bookingSuccess", {
+        driverId: data.driverId,
+        bookingData: {
+          bookingCode,
+          slot,
+          lat: data.lat,
+          lng: data.lng,
+          createdAt: updateData.Rider1_created_at || updateData.Rider2_created_at,
+        },
       });
+
+      // notify driver if connected
+      const dSnap = await get(driverRef);
+      const dNew = dSnap.val();
+      if (dNew && dNew.socketId) {
+        io.to(dNew.socketId).emit("newBooking", { bookingCode, slot, riderId: data.riderId });
+      }
+    } catch (err) {
+      console.error("❌ bookDriver error:", err);
+      socket.emit("bookingStatus", { status: "error", message: "Server error booking driver" });
     }
-
-    const driverRef = ref(db, `drivers/${data.driverId}`);
-    const snap = await get(driverRef);
-    const driver = snap.val();
-    if (!driver)
-      return socket.emit("bookingStatus", { status: "error", message: "Driver not found" });
-
-    let slot = null;
-    if (!driver.Rider1_id) slot = "slot1";
-    else if (!driver.Rider2_id) slot = "slot2";
-    else return socket.emit("bookingFailed", "Driver full");
-
-    const bookingCode = Math.floor(100000 + Math.random() * 900000).toString();
-    let updateData = {};
-    if (slot === "slot1") {
-      updateData = {
-        Rider1_id: data.riderId,
-        Booking1_code: bookingCode,
-        Rider1_created_at: data.createdAt,
-        Rider1_lat: data.lat,
-        Rider1_lng: data.lng,
-        Rider1_pickup: data.pickup,
-        Rider1_destination: data.destination,
-      };
-    } else if (slot === "slot2") {
-      updateData = {
-        Rider2_id: data.riderId,
-        Booking2_code: bookingCode,
-        Rider2_created_at: data.createdAt,
-        Rider2_lat: data.lat,
-        Rider2_lng: data.lng,
-        Rider2_pickup: data.pickup,
-        Rider2_destination: data.destination,
-      };
-    }
-
-    await update(driverRef, updateData);
-
-    socket.emit("bookingStatus", { status: "success", slot, driverId: data.driverId });
-    socket.emit("bookingSuccess", {
-      driverId: data.driverId,
-      bookingData: {
-        bookingCode,
-        slot,
-        lat: data.lat,
-        lng: data.lng,
-        createdAt: data.createdAt,
-      },
-    });
   });
 
   // Disconnect
   socket.on("disconnect", async () => {
-    console.log("🔴 Socket disconnected:", socket.id);
-    if (socket.driverId) {
-      await update(ref(db, `drivers/${socket.driverId}`), { online: 1 });
-      delete drivers[socket.driverId];
+    try {
+      console.log("🔴 Socket disconnected:", socket.id);
+      if (socket.driverId) {
+        // mark driver offline
+        await update(ref(db, `drivers/${socket.driverId}`), { online: 0, socketId: null });
+        delete driversMemory[socket.driverId];
+      }
+    } catch (err) {
+      console.error("❌ disconnect error:", err);
     }
   });
 });
@@ -408,4 +428,3 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
