@@ -285,33 +285,55 @@ socket.on("driverLocation", async ({ lat, lng, speed, accuracy }) => {
 socket.on("riderLiveLocation", async ({ riderId, lat, lng }) => {
   if (typeof lat !== "number" || typeof lng !== "number") return;
 
-  // 1. Find the driver who has this rider
+  // 1. Get all drivers
   const snap = await get(ref(db, "drivers"));
   const drivers = snap.val();
   if (!drivers) return;
 
+  // 2. Find which driver this rider belongs to
   for (let driverId in drivers) {
-    let d = drivers[driverId];
+    let driver = drivers[driverId];
 
-    // Rider belongs to slot 1
-    if (d.Rider1_id === riderId) {
+    // ————— SLOT 1 —————
+    if (driver.Rider1_id === riderId) {
+      // Update Firebase
       await update(ref(db, `drivers/${driverId}`), {
         Rider1_lat: lat,
         Rider1_lng: lng,
       });
+
+      // Emit in real-time to the driver
+      if (driver.socketId) {
+        io.to(driver.socketId).emit("riderPositionUpdate", {
+          riderId,
+          lat,
+          lng,
+        });
+      }
+
       return;
     }
 
-    // Rider belongs to slot 2
-    if (d.Rider2_id === riderId) {
+    // ————— SLOT 2 —————
+    if (driver.Rider2_id === riderId) {
       await update(ref(db, `drivers/${driverId}`), {
         Rider2_lat: lat,
         Rider2_lng: lng,
       });
+
+      if (driver.socketId) {
+        io.to(driver.socketId).emit("riderPositionUpdate", {
+          riderId,
+          lat,
+          lng,
+        });
+      }
+
       return;
     }
   }
 });
+
 
   // Book driver
   socket.on("bookDriver", async (data) => {
