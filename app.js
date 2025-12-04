@@ -283,59 +283,25 @@ io.on("connection", (socket) => {
   });
 });
 
-// Rider live location update
 socket.on("riderLocation", async (pos) => {
-  if (typeof pos.lat !== "number" || typeof pos.lng !== "number") return;
+  const { lat, lng } = pos;
+  const riderId = socket.id;
 
-  // store rider locally (optional)
-  riders[socket.id] = { ...pos, id: socket.id };
-
-  // find which driver this rider belongs to
-  const driverId = Object.keys(drivers).find(
-    (d) =>
-      drivers[d] &&
-      (drivers[d].Rider1_id === socket.id ||
-        drivers[d].Rider2_id === socket.id)
-  );
+  const driverId = Object.keys(drivers).find((d) => {
+    const dr = drivers[d];
+    return dr && (dr.Rider1_id === riderId || dr.Rider2_id === riderId);
+  });
 
   if (!driverId) return;
 
-  const driver = drivers[driverId];
+  await update(ref(db, "drivers/" + driverId), {
+    Rider1_lat: riderId === drivers[driverId].Rider1_id ? lat : drivers[driverId].Rider1_lat,
+    Rider1_lng: riderId === drivers[driverId].Rider1_id ? lng : drivers[driverId].Rider1_lng,
 
-  let latKey = "";
-  let lngKey = "";
-
-  // ❗ Identify correct slot and don't change slot
-  if (driver.Rider1_id === socket.id) {
-    latKey = "Rider1_lat";
-    lngKey = "Rider1_lng";
-  } else if (driver.Rider2_id === socket.id) {
-    latKey = "Rider2_lat";
-    lngKey = "Rider2_lng";
-  } else {
-    return; // rider not in any slot
-  }
-
-  // update in memory
-  driver[latKey] = pos.lat;
-  driver[lngKey] = pos.lng;
-
-  // update in Firebase
-  await update(ref(db, `drivers/${driverId}`), {
-    [latKey]: pos.lat,
-    [lngKey]: pos.lng,
+    Rider2_lat: riderId === drivers[driverId].Rider2_id ? lat : drivers[driverId].Rider2_lat,
+    Rider2_lng: riderId === drivers[driverId].Rider2_id ? lng : drivers[driverId].Rider2_lng,
   });
-
-  // send live update to driver app (if connected)
-  if (driver.socketId) {
-    io.to(driver.socketId).emit("riderPositionUpdate", {
-      riderId: socket.id,
-      lat: pos.lat,
-      lng: pos.lng,
-    });
-  }
 });
-
 
   // Book driver
   socket.on("bookDriver", async (data) => {

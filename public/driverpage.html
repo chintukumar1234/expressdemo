@@ -362,6 +362,12 @@
   }
 
   window.openDriverMap = openDriverMap;
+  navigator.geolocation.watchPosition((pos) => {
+  socket.emit("riderLocation", {
+    lat: pos.coords.latitude,
+    lng: pos.coords.longitude
+  });
+});
 
   window.closeMapPopup = function() {
     const popup = document.getElementById('mapPopup'); if (!popup) return; if (popup._leafletCleanup) popup._leafletCleanup(); popup.style.display = 'none';
