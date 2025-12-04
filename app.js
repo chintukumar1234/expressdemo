@@ -228,7 +228,7 @@ io.on("connection", (socket) => {
   socket.on("registerDriver", async ({ driverId }) => {
     if (!driverId) return;
     socket.driverId = driverId;
-
+    console.log("Driver registered:", socket.driverId);
     const snap = await get(ref(db, `drivers/${driverId}`));
     if (!snap.exists()) return;
 
@@ -265,14 +265,14 @@ io.on("connection", (socket) => {
       });
   });
 
- socket.on("driverLocation", async ({ lat, lng, speed, accuracy }) => {
-  if (!socket.driverId) return; // driver not registered yet
-  if (!drivers[socket.driverId]) {
-    console.warn("Driver not found in memory:", socket.driverId);
-    return;
-  }
+socket.on("driverLocation", async ({ lat, lng, speed, accuracy }) => {
+  if (!socket.driverId) return;
 
-  if (typeof lat !== "number" || typeof lng !== "number") return;
+  // create memory entry if missing
+  if (!drivers[socket.driverId]) {
+    console.log("Creating missing driver memory:", socket.driverId);
+    drivers[socket.driverId] = {};
+  }
 
   drivers[socket.driverId].Driver_lat = lat;
   drivers[socket.driverId].Driver_lng = lng;
@@ -282,25 +282,35 @@ io.on("connection", (socket) => {
     Driver_lng: lng,
   });
 });
+socket.on("riderLiveLocation", async ({ riderId, lat, lng }) => {
+  if (typeof lat !== "number" || typeof lng !== "number") return;
 
-socket.on("riderLocation", async (pos) => {
-  const { lat, lng } = pos;
-  const riderId = socket.id;
+  // 1. Find the driver who has this rider
+  const snap = await get(ref(db, "drivers"));
+  const drivers = snap.val();
+  if (!drivers) return;
 
-  const driverId = Object.keys(drivers).find((d) => {
-    const dr = drivers[d];
-    return dr && (dr.Rider1_id === riderId || dr.Rider2_id === riderId);
-  });
+  for (let driverId in drivers) {
+    let d = drivers[driverId];
 
-  if (!driverId) return;
+    // Rider belongs to slot 1
+    if (d.Rider1_id === riderId) {
+      await update(ref(db, `drivers/${driverId}`), {
+        Rider1_lat: lat,
+        Rider1_lng: lng,
+      });
+      return;
+    }
 
-  await update(ref(db, "drivers/" + driverId), {
-    Rider1_lat: riderId === drivers[driverId].Rider1_id ? lat : drivers[driverId].Rider1_lat,
-    Rider1_lng: riderId === drivers[driverId].Rider1_id ? lng : drivers[driverId].Rider1_lng,
-
-    Rider2_lat: riderId === drivers[driverId].Rider2_id ? lat : drivers[driverId].Rider2_lat,
-    Rider2_lng: riderId === drivers[driverId].Rider2_id ? lng : drivers[driverId].Rider2_lng,
-  });
+    // Rider belongs to slot 2
+    if (d.Rider2_id === riderId) {
+      await update(ref(db, `drivers/${driverId}`), {
+        Rider2_lat: lat,
+        Rider2_lng: lng,
+      });
+      return;
+    }
+  }
 });
 
   // Book driver

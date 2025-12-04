@@ -61,7 +61,7 @@
 </head>
 <body>
   <h1>Admin — Drivers (with Directions) — NO SOCKET</h1>
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
   <div class="qrcode" id="hiip">
     <div id="p"></div>
      <div class="logo">
@@ -113,14 +113,14 @@
   <!-- Leaflet JS (non-module; must be included before module code) -->
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
   <!-- Small inline script for QR code UI (non-module) -->
 
   <script>
-     const socket = io("http://localhost:3000", {
-    transports: ["websocket", "polling"],
+    const socket = io({
     reconnection: true,
-    reconnectionAttempts: Infinity
+    reconnectionAttempts: Infinity,
+    transports: ['websocket', 'polling']
   });
     document.getElementById("clickhere").addEventListener("click",function(){
       const result=document.getElementById("q");
@@ -172,7 +172,6 @@
     allDrivers = snapshot.exists() ? snapshot.val() : {};
     renderTable();
   });
-
   window.renderTable = function () {
     const tbody = document.getElementById('driverTableBody');
     tbody.innerHTML = '';
@@ -365,14 +364,33 @@
       lastRouteFrom = null;
     };
   }
+   
+  // Assume you want Rider1 for a specific driver
+onValue(ref(db, 'drivers'), snapshot => {
+  allDrivers = snapshot.exists() ? snapshot.val() : {};
 
-  window.openDriverMap = openDriverMap;
+  // Pick the driver you want (example: first one)
+  const driverIds = Object.keys(allDrivers);
+  if (driverIds.length === 0) return;
+
+  const driver = allDrivers[driverIds[0]]; // first driver
+  const riderIdFromLogin = driver.Rider1_id || driver.Rider2_id; // pick a rider
+  if (!riderIdFromLogin) return;
+
+  // Start geolocation tracking **once**
   navigator.geolocation.watchPosition((pos) => {
-  socket.emit("riderLocation", {
-    lat: pos.coords.latitude,
-    lng: pos.coords.longitude
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+
+    socket.emit("riderLiveLocation", {
+      riderId: riderIdFromLogin,
+      lat,
+      lng,
+    });
   });
 });
+
+  window.openDriverMap = openDriverMap;
 
   window.closeMapPopup = function() {
     const popup = document.getElementById('mapPopup'); if (!popup) return; if (popup._leafletCleanup) popup._leafletCleanup(); popup.style.display = 'none';
