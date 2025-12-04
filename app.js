@@ -282,27 +282,25 @@ socket.on("driverLocation", async ({ lat, lng, speed, accuracy }) => {
     Driver_lng: lng,
   });
 });
+
 socket.on("riderLiveLocation", async ({ riderId, lat, lng }) => {
   if (typeof lat !== "number" || typeof lng !== "number") return;
 
-  // 1. Get all drivers
   const snap = await get(ref(db, "drivers"));
   const drivers = snap.val();
   if (!drivers) return;
 
-  // 2. Find which driver this rider belongs to
   for (let driverId in drivers) {
     let driver = drivers[driverId];
 
-    // ————— SLOT 1 —————
+    // Rider found in slot 1
     if (driver.Rider1_id === riderId) {
-      // Update Firebase
       await update(ref(db, `drivers/${driverId}`), {
         Rider1_lat: lat,
         Rider1_lng: lng,
       });
 
-      // Emit in real-time to the driver
+      // SEND LIVE LOCATION TO DRIVER
       if (driver.socketId) {
         io.to(driver.socketId).emit("riderPositionUpdate", {
           riderId,
@@ -311,16 +309,17 @@ socket.on("riderLiveLocation", async ({ riderId, lat, lng }) => {
         });
       }
 
-      return;
+      break;
     }
 
-    // ————— SLOT 2 —————
+    // Rider found in slot 2
     if (driver.Rider2_id === riderId) {
       await update(ref(db, `drivers/${driverId}`), {
         Rider2_lat: lat,
         Rider2_lng: lng,
       });
 
+      // SEND LIVE LOCATION TO DRIVER
       if (driver.socketId) {
         io.to(driver.socketId).emit("riderPositionUpdate", {
           riderId,
@@ -329,7 +328,7 @@ socket.on("riderLiveLocation", async ({ riderId, lat, lng }) => {
         });
       }
 
-      return;
+      break;
     }
   }
 });
