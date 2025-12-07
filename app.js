@@ -470,21 +470,24 @@ io.on("connection", (socket) => {
   });
 
   /* Clean disconnect */
- socket.on("disconnect", () => {
-        console.log("🔴 Socket disconnected:", socket.id);
+/* Clean disconnect */
+socket.on("disconnect", () => {
+  const driverId = socket.driverId;
 
-        if (driverId) {
-            console.log(`⚠ driver(${driverId}) disconnected — keeping online = 1`);
+  console.log("🔴 Socket disconnected:", socket.id);
 
-            // DO NOT SET ONLINE = 0  
-            // Because you want driver to stay ONLINE always
+  if (driverId) {
+    console.log(`⚠ driver(${driverId}) disconnected — keeping online = 1`);
 
-            // Cleanup socket memory
-            if (connectedDrivers[driverId]) {
-                delete connectedDrivers[driverId];
-            }
-        }
-    });
+    // DO NOT CHANGE online = 1 (as you want)
+    // Only remove socketId from memory so rider updates will not try to emit
+
+    if (drivers[driverId]) {
+      delete drivers[driverId].socketId; // remove socketId only
+      drivers[driverId].lastSeenMs = Date.now(); // update last seen
+    }
+  }
+});
 
   /* safety: catch uncaught errors in socket handlers */
   socket.on("error", (err) => {
