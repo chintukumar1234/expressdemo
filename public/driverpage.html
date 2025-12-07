@@ -119,6 +119,7 @@
   <!-- Small inline script for QR code UI (non-module) -->
 
   <script>
+    let activeWatchId = null;
     const socket = io({
     reconnection: true,
     reconnectionAttempts: Infinity,
@@ -320,8 +321,15 @@ async function openDriverMap(driverId, activeRiderId) {
     }
 
     // 🟢 FIXED — Start sending LIVE rider location to backend
-    // Start GPS tracking for ONLY this rider
-navigator.geolocation.watchPosition((pos) => {
+// 🟢 STOP OLD WATCHER BEFORE STARTING NEW
+if (activeWatchId !== null) {
+    navigator.geolocation.clearWatch(activeWatchId);
+    activeWatchId = null;
+}
+
+// 🟢 START SAFE WATCHER FOR THIS ONLY RIDER
+activeWatchId = navigator.geolocation.watchPosition((pos) => {
+
     if (!activeRiderId) return;
 
     const lat = pos.coords.latitude;
@@ -457,6 +465,12 @@ onValue(ref(db, 'drivers'), snapshot => {
   window.openDriverMap = openDriverMap;
 
   window.closeMapPopup = function() {
+    // 🛑 STOP GPS WATCHER WHEN MAP CLOSES
+if (activeWatchId !== null) {
+    navigator.geolocation.clearWatch(activeWatchId);
+    activeWatchId = null;
+}
+
     const popup = document.getElementById('mapPopup'); if (!popup) return; if (popup._leafletCleanup) popup._leafletCleanup(); popup.style.display = 'none';
   };
 
