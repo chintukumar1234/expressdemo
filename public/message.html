@@ -7,7 +7,6 @@
 <title>Driver - Multi Rider Tracker (Max 2)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
-
 <style>
   :root { --bg:#0f1724; --panel: rgba(10,10,12,0.9); --accent:#0078ff; --muted:#cbd5e1; }
   html,body{ height:100%; margin:0; font-family:Inter, system-ui, Arial; background:#eaf2ff; }
@@ -33,7 +32,6 @@
 <button class="toggle-btn" id="toggleBtn">☰</button>
 
 <div class="sidebar closed" id="sidebar">
-  <h3>🚗 Driver — Multi Rider (max 2)</h3>
 
   <p>Status: <strong id="status">Not sharing</strong></p>
   <p class="muted">Speed: <span id="speed">0</span> km/h — Accuracy: <span id="accuracy">-</span> m</p>
@@ -54,17 +52,25 @@
 
   <div class="slot" id="slot1">
     <h4>Rider Slot 1</h4>
+    <span>Mobile Number:
+    <div id="rider1"></div>
+    </span>
     <div id="slot1_info" class="small">Empty</div>
     <div class="row" style="margin-top:8px;">
       <button onclick="centerSlot('s1')" class="ghost" style="flex:1">Center</button>
+      <button onclick="clearSlotPrompt('s1')" class="ghost" style="flex:1">Clear Slot</button>
     </div>
   </div>
 
   <div class="slot" id="slot2">
     <h4>Rider Slot 2</h4>
+    <span>Mobile Number:
+    <div id="rider2"></div>
+    </span>
     <div id="slot2_info" class="small">Empty</div>
     <div class="row" style="margin-top:8px;">
       <button onclick="centerSlot('s2')" class="ghost" style="flex:1">Center</button>
+      <button onclick="clearSlotPrompt('s2')" class="ghost" style="flex:1">Clear Slot</button>
     </div>
   </div>
 
@@ -77,19 +83,40 @@
   <footer>Connected driver persists across refresh (reconnect supported)</footer>
 </div>
 
+<!-- MAP CONTAINER -->
 <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
-<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<!-- Firebase + App logic -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-database.js";
 
-<script>
+/* ========== Firebase init (read-only listeners) ========== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCsZcn4VPhpnlgU0K_NPHPINjq9Qi5iVT8",
+  authDomain: "mydatabase-e7c01.firebaseapp.com",
+  databaseURL: "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
+  projectId: "mydatabase-e7c01",
+  storageBucket: "mydatabase-e7c01.appspot.com",
+  messagingSenderId: "447471871540",
+  appId: "1:447471871540:web:d48721caa65174b1598c61"
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
+
+/* ========== State & UI refs ========== */
 let sharing = 0;
 let watchId = null;
 let driverMarker = null;
 let autoCenter = true;
 let lastDriverPos = null;
 let routeMode = "car";
+const driverId = localStorage.getItem("userId"); // must be set on login
+const slots = {
+  s1: { riderId: null, bookingCode: null, marker: null, route: null },
+  s2: { riderId: null, bookingCode: null, marker: null, route: null }
+};
+
 const statusEl = document.getElementById("status");
 const shareBtn = document.getElementById("toggleShare");
 const toggleBtn = document.getElementById("toggleBtn");
@@ -103,177 +130,147 @@ const routeModeEl = document.getElementById("routeMode");
 const bookingCodeInput = document.getElementById("bookingCode");
 const clearByCodeBtn = document.getElementById("clearByCodeBtn");
 const messageEl = document.getElementById("message");
+const sidebar = document.getElementById("sidebar");
 
-const driverId = localStorage.getItem("userId");
+/* ========== Map init ========== */
+const map = L.map('map').setView([20.5937,78.9629], 5); // India default view
+
+const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+L.control.layers({ "Street Map": streetLayer, "Satellite": satelliteLayer }).addTo(map);
+
+/* ========== UI wiring ========== */
 toggleBtn.addEventListener("click", ()=> {
   sidebar.classList.toggle("closed");
   toggleBtn.textContent = sidebar.classList.contains("closed") ? "☰" : "✖";
 });
-
-const slots = {
-  s1: { riderId: null, bookingCode: null, marker: null, route: null },
-  s2: { riderId: null, bookingCode: null, marker: null, route: null }
-};
-/* ================= Map ================= */
-const map = L.map('map').setView([0, 0], 13);
-
-// base layers
-const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap contributors'
-});
-
-const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 19,
-  attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
-});
-
-// add default
-streetLayer.addTo(map);
-
-// add layer control
-L.control.layers({
-  "Street Map": streetLayer,
-  "Satellite": satelliteLayer
-}).addTo(map);
-
-/* ================= Socket ================= */
-const socket = io({ reconnection:true, transports:['websocket','polling'] });
-
-socket.on("connect", ()=> {
-  console.log("Socket connected");
-  socket.emit("registerDriver", { driverId });
-});
-
-//==============================================
 shareBtn.addEventListener("click", ()=> sharing ? stopSharing() : startSharing());
-window.addEventListener("load", () => {
-  startSharing();
+centerBtn.addEventListener("click", ()=> { autoCenter = !autoCenter; centerBtn.textContent = `Auto-Center: ${autoCenter?"ON":"OFF"}`; });
+routeModeEl.addEventListener("change", ()=> {
+  routeMode = routeModeEl.value;
+  // recreate routes with new profile
+  ["s1","s2"].forEach(k => { if (slots[k].route) { try { map.removeControl(slots[k].route); } catch{} slots[k].route = null; if (slots[k].marker && driverMarker) createRoute(k); }});
 });
-/* ================= Helpers ================= */
-function setSharingState(on) {
-  sharing = on;
-  statusEl.textContent = on ? "Sharing" : "Not sharing";
-  statusEl.style.color = on ? "lightgreen" : "lightcoral";
-  shareBtn.textContent = on ? "Stop Sharing" : "Start Sharing";
+clearByCodeBtn.addEventListener("click", clearByCode);
+
+/* ========== Helper: POST wrapper ========== */
+async function postJSON(url, data) {
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
+    .then(r => r.json());
 }
 
-function formatTime(ts){ return new Date(ts).toLocaleTimeString(); }
-function haversineKm(lat1, lon1, lat2, lon2){
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI/180;
-  const dLon = (lon2 - lon1) * Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-/* ================= Share location (driver) ================= */
-function startSharing(){
+/* ========== Start/Stop sharing ========== */
+function startSharing() {
+  if (!driverId) {
+    alert("No driver logged in. Please login first.");
+    window.location.href = "/"; // change to your login page if needed
+    return;
+  }
   if (!navigator.geolocation) return alert("Geolocation not supported in this browser.");
 
-  setSharingState(1);
-  // update DB online flag
-  fetch("/updateOnline", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ userId: driverId, online: 1 }) });
+  sharing = 1;
+  updateUISharing();
 
-  watchId = navigator.geolocation.watchPosition(position => {
-    const { latitude: lat, longitude: lng, speed, accuracy } = position.coords;
-    const ts = position.timestamp || Date.now();
+  // tell backend we are online
+  postJSON("/updateOnline", { userId: driverId, online: 1 }).catch(()=>{});
+
+  // watch position and POST to backend (so backend updates Firebase)
+  watchId = navigator.geolocation.watchPosition(async (pos) => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const speed = pos.coords.speed;
+    const accuracy = pos.coords.accuracy;
+    const ts = pos.timestamp || Date.now();
     lastDriverPos = { lat, lng, speed, accuracy, ts };
 
-    // send to server
-    socket.emit("driverLocation", { lat, lng, speed, accuracy });
+    // update via backend endpoint (so DB is authoritative)
+    postJSON("/driverLocation", { driverId, lat, lng }).catch(()=>{});
 
-    // update map marker
+    // update map marker & UI
     if (!driverMarker) {
       driverMarker = L.marker([lat, lng]).addTo(map).bindPopup("You (Driver)").openPopup();
     } else {
       driverMarker.setLatLng([lat, lng]);
     }
 
-    // update UI
-    speedEl.textContent = speed ? (speed * 3.6).toFixed(1) : 0;
+    speedEl.textContent = speed ? (speed*3.6).toFixed(1) : 0;
     accEl.textContent = accuracy ? accuracy.toFixed(1) : "-";
-    timeEl.textContent = formatTime(ts);
+    timeEl.textContent = new Date(ts).toLocaleTimeString();
 
-    // update routes
-    ["s1","s2"].forEach(id => {
-      if (slots[id].marker) updateRoute(id);
-    });
+    // update routes if riders exist
+    ["s1","s2"].forEach(id => { if (slots[id].marker) updateRoute(id); });
 
     if (autoCenter && driverMarker) map.setView([lat, lng]);
-  }, err => {
-    console.warn("Geolocation error:", err.message);
-    messageEl.innerText = "GPS error: " + err.message;
-  }, { enableHighAccuracy:true, timeout:10000, maximumAge:1000 });
+  }, (err) => {
+    messageEl.innerText = "GPS error: " + (err.message || err.code);
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 });
+
+  // start listening to *this driver's* DB node for bookings & rider updates
+  listenToThisDriverNode();
 }
 
-function stopSharing(){
-  setSharingState(0);
-  fetch("/updateOnline", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ userId: driverId, online: 0 }) });
-  if (watchId) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
+function stopSharing() {
+  sharing = 0;
+  updateUISharing();
+  postJSON("/updateOnline", { userId: driverId, online: 0 }).catch(()=>{});
+  if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; }
 }
 
-centerBtn.addEventListener("click", ()=> {
-  autoCenter = !autoCenter;
-  centerBtn.textContent = `Auto-Center: ${autoCenter ? "ON" : "OFF"}`;
-});
+/* ========== UI update ========== */
+function updateUISharing() {
+  statusEl.textContent = sharing ? "Sharing" : "Not sharing";
+  statusEl.style.color = sharing ? "lightgreen" : "lightcoral";
+  shareBtn.textContent = sharing ? "Stop Sharing" : "Start Sharing";
+}
 
-routeModeEl.addEventListener("change", ()=> {
-  routeMode = routeModeEl.value;
-  // recreate routes using new profile
-  ["s1","s2"].forEach(id => {
-    if (slots[id].route) {
-      try { map.removeControl(slots[id].route); } catch (e) {}
-      slots[id].route = null;
-      if (slots[id].marker && driverMarker) createRoute(id);
+/* ========== Firebase listener for this driver node ==========
+   We listen to drivers/{driverId} so only bookings assigned to this driver are shown.
+   This prevents mixing other drivers' riders into your slots.
+============================================================== */
+let driverNodeUnsubscribe = null;
+function listenToThisDriverNode() {
+  if (!driverId) return;
+  const nodeRef = ref(db, `drivers/${driverId}`);
+  // only one listener (onValue) — automatically updsates slots
+  onValue(nodeRef, snapshot => {
+    const d = snapshot.val() || {};
+    // Rider1
+    if (d.Rider1_id) {
+      slots.s1.mobile= d.Rider1_mobile;
+      document.getElementById("rider1").innerHTML=slots.s1.mobile;
+      slots.s1.riderId = d.Rider1_id;
+      slots.s1.bookingCode = d.Booking1_code || null;
+      const lat = d.Rider1_lat || null;
+      const lng = d.Rider1_lng || null;
+      if (!slots.s1.marker) slots.s1.marker = createRiderMarker(lat, lng, slots.s1.riderId);
+      else if (lat != null && lng != null) slots.s1.marker.setLatLng([lat, lng]);
+      updateSlotInfo("s1");
+      updateRoute("s1");
+    } else {
+      removeSlot("s1");
     }
+
+    // Rider2
+    if (d.Rider2_id) {
+        slots.s2.mobile= d.Rider2_mobile;
+      document.getElementById("rider2").innerHTML=slots.s2.mobile;
+      slots.s2.riderId = d.Rider2_id;
+      slots.s2.bookingCode = d.Booking2_code || null;
+      const lat = d.Rider2_lat || null;
+      const lng = d.Rider2_lng || null;
+      if (!slots.s2.marker) slots.s2.marker = createRiderMarker(lat, lng, slots.s2.riderId);
+      else if (lat != null && lng != null) slots.s2.marker.setLatLng([lat, lng]);
+      updateSlotInfo("s2");
+      updateRoute("s2");
+    } else {
+      removeSlot("s2");
+    }
+  }, (err) => {
+    console.warn("Firebase onValue error:", err);
   });
-});
-clearByCodeBtn.addEventListener("click", clearByCode);
+}
 
-/* ================= Booking / rider events ================= */
-socket.on("bookingConfirmed", ({ RiderId, lat, lng, bookingCode }) => {
-  if (slots.s1.RiderId === RiderId || slots.s2.RiderId === RiderId) return;
-
-  const emptySlot = !slots.s1.RiderId ? "s1" : (!slots.s2.RiderId ? "s2" : null);
-  if (!emptySlot) {
-    alert("New booking arrived but you already have 2 riders.");
-    return;
-  }
-
-  // Save booking info
-  slots[emptySlot].RiderId = RiderId;
-  slots[emptySlot].bookingCode = bookingCode || "—"; // ✅ show bookingCode
-  slots[emptySlot].marker = createRiderMarker(lat, lng, RiderId);
-  updateSlotInfo(emptySlot);
-  createRoute(emptySlot);
-});
-// Rider location updates (server emits to driver)
-socket.on("riderPositionUpdate", ({ riderId, lat, lng }) => {
-  // find slot
-  const slotKey = (slots.s1.riderId === riderId) ? "s1" : (slots.s2.riderId === riderId ? "s2" : null);
-  if (!slotKey) {
-    // if there's an empty slot, attach to it
-    const emptySlot = !slots.s1.riderId ? "s1" : (!slots.s2.riderId ? "s2" : null);
-    if (!emptySlot) return; // both full — ignore
-    slots[emptySlot].riderId = riderId;
-    slots[emptySlot].marker = createRiderMarker(lat, lng, riderId);
-    updateSlotInfo(emptySlot);
-    createRoute(emptySlot);
-    return;
-  }
-
-  // update marker and route
-  if (slots[slotKey].marker) slots[slotKey].marker.setLatLng([lat, lng]);
-  else slots[slotKey].marker = createRiderMarker(lat, lng, riderId);
-  updateSlotInfo(slotKey);
-  updateRoute(slotKey);
-});
-
-/* ================= Marker & routing utilities ================= */
+/* ========== Marker & routing utilities ========== */
 function createRiderMarker(lat, lng, riderId) {
   const icon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/3448/3448339.png", iconSize: [36,36], iconAnchor:[18,36] });
   const m = L.marker([lat || 0, lng || 0], { icon }).addTo(map).bindPopup(`Rider: ${riderId}`);
@@ -281,93 +278,59 @@ function createRiderMarker(lat, lng, riderId) {
 }
 
 function createRoute(slotKey) {
-  if (!driverMarker || !slots[slotKey].marker) return;
-  // remove old
-  if (slots[slotKey].route) {
-    try { map.removeControl(slots[slotKey].route); } catch(e) {}
-    slots[slotKey].route = null;
-  }
+  try {
+    if (!driverMarker || !slots[slotKey].marker) return;
+    if (slots[slotKey].route) { try { map.removeControl(slots[slotKey].route); } catch(e) {} slots[slotKey].route = null; }
 
-  const driverPos = driverMarker.getLatLng();
-  const riderPos = slots[slotKey].marker.getLatLng();
-  const profile = routeMode === "bike" ? "bike" : "car";
-  const color = slotKey === "s1" ? "#2a7cff" : "#16a34a"; // blue/green
-  const dash = slotKey === "s2" ? "6,8" : null;
+    const profile = routeMode === "bike" ? "bike" : "car";
+    const color = slotKey === "s1" ? "#2a7cff" : "#16a34a";
+    const dash = slotKey === "s2" ? "6,8" : null;
 
-  slots[slotKey].route = L.Routing.control({
-    waypoints: [driverPos, riderPos],
-    router: L.Routing.osrmv1({
-      serviceUrl: 'https://router.project-osrm.org/route/v1',
-      profile: profile
-    }),
-    routeWhileDragging: false,
-    addWaypoints: false,
-    draggableWaypoints: false,
-    createMarker: ()=>null,
-    show: false,
-    lineOptions: {
-      styles: [{ color, opacity:0.9, weight:5, dashArray: dash }]
+    slots[slotKey].route = L.Routing.control({
+      waypoints: [ driverMarker.getLatLng(), slots[slotKey].marker.getLatLng() ],
+      router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1', profile }),
+      routeWhileDragging: false,
+      addWaypoints: false,
+      draggableWaypoints: false,
+      createMarker: () => null,
+      show: false,
+      lineOptions: { styles: [{ color, opacity:0.9, weight:5, dashArray: dash }] }
+    }).addTo(map);
+
+    if (autoCenter) {
+      try {
+        const bounds = L.latLngBounds([ driverMarker.getLatLng(), slots[slotKey].marker.getLatLng() ]);
+        map.fitBounds(bounds, { padding: [50,50] });
+      } catch(e){}
     }
-  }).addTo(map);
-
-  if (autoCenter) {
-    const bounds = L.latLngBounds([driverPos, riderPos]);
-    map.fitBounds(bounds, { padding: [50,50] });
+  } catch (e) {
+    console.error("createRoute error:", e);
   }
-}
-
-function updateSlotInfo(slotKey) {
-  const infoEl = slotKey === "s1" ? slot1Info : slot2Info;
-  const slot = slots[slotKey];
-
-  if (!slot.riderId && !slot.bookingCode) {
-    infoEl.innerText = "Empty";
-    return;
-  }
-  const m = slot.marker;
-  const latlng = m ? m.getLatLng() : null;
-  const label = slot.bookingCode
-    ? `Booking Code:<div style="font-size:20px;color:green;">${slot.bookingCode}</div>`
-    : `Rider ID: ${slot.riderId}`;
-
-  infoEl.innerHTML = `${label}${latlng ? `<br>Lat:${latlng.lat.toFixed(5)}, Lng:${latlng.lng.toFixed(5)}` : ""}`;
 }
 
 function updateRoute(slotKey) {
-  if (!slots[slotKey].route) {
-    createRoute(slotKey);
-    return;
-  }
+  if (!slots[slotKey].route) { createRoute(slotKey); return; }
   if (!driverMarker || !slots[slotKey].marker) return;
-
   try {
-    slots[slotKey].route.setWaypoints([
-      driverMarker.getLatLng(),
-      slots[slotKey].marker.getLatLng()
-    ]);
+    slots[slotKey].route.setWaypoints([ driverMarker.getLatLng(), slots[slotKey].marker.getLatLng() ]);
   } catch (e) {
-    try { map.removeControl(slots[slotKey].route); } catch (e) {}
+    // fallback: recreate
+    try { map.removeControl(slots[slotKey].route); } catch (err) {}
     slots[slotKey].route = null;
     createRoute(slotKey);
   }
-
-  const d = haversineKm(
-    driverMarker.getLatLng().lat,
-    driverMarker.getLatLng().lng,
-    slots[slotKey].marker.getLatLng().lat,
-    slots[slotKey].marker.getLatLng().lng
-  );
-
-  const etaMin = Math.max(1, Math.round(d / 0.5));
-  const infoEl = slotKey === "s1" ? slot1Info : slot2Info;
-  const slot = slots[slotKey];
-  const label = slot.bookingCode
-    ? `Booking Code: ${slot.bookingCode}`
-    : `Rider ID: ${slot.riderId}`;
-
-  infoEl.innerHTML = `${label}<br>Distance: ${d.toFixed(2)} km — ETA: ${etaMin} min`;
 }
 
+/* ========== Slot UI helpers ========== */
+function updateSlotInfo(slotKey) {
+  const slot = slots[slotKey];
+  const el = (slotKey === "s1") ? slot1Info : slot2Info;
+  if (!slot.riderId && !slot.bookingCode) { el.innerText = "Empty"; return; }
+  const m = slot.marker;
+  const latlng = m ? m.getLatLng() : null;
+  const label = slot.bookingCode ? `Booking Code:<div style="font-size:18px;color:lightgreen;">${slot.bookingCode}</div>` : `Rider ID: ${slot.riderId}`;
+  el.innerHTML = `${label}${latlng ? `<br>Lat:${latlng.lat.toFixed(5)}, Lng:${latlng.lng.toFixed(5)}` : ""}`;
+}
 
 function removeSlot(slotKey) {
   if (slots[slotKey].marker) {
@@ -383,65 +346,59 @@ function removeSlot(slotKey) {
   updateSlotInfo(slotKey);
 }
 
-/* ================= Clear booking actions ================= */
-async function clearByCode(){
-  const code = bookingCodeInput.value.trim();
-  if (!code) { messageEl.innerText = "Enter booking code to clear."; return; }
-
+/* ========== Clear booking helpers ========== */
+async function clearByCode(slotKey,code) {
+  if(slotKey==="s2"){
+         document.getElementById("rider2").innerHTML="";
+  }else{
+         document.getElementById("rider1").innerHTML="";
+  }
   try {
-    const res = await fetch("/target", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ bookingCode: code }) });
-    const data = await res.json();
-    messageEl.innerText = `✅ ${data.message}`;
-    // If this code matches a slot's bookingCode in memory, remove it.
-    ["s1","s2"].forEach(k => {
-      if (slots[k].bookingCode && slots[k].bookingCode === code) removeSlot(k);
-    });
-    // We don't have booking codes by default (rider holds it). Driver can clear by entering code manually.
-  } catch (err) {
-    console.error("Clear booking error:", err);
-    messageEl.innerText = "❌ Failed to clear booking. Try again.";
+    const resp = await postJSON("/target", { bookingCode: code });
+    messageEl.innerText = `✅ ${resp.message || 'Cleared'}`;
+    ["s1","s2"].forEach(k => { if (slots[k].bookingCode === code) removeSlot(k); });
+  } catch (e) {
+    console.error(e);
+    messageEl.innerText = "❌ Failed to clear booking.";
   }
 }
 
-function clearSlotPrompt(slotKey) {
-  const code = prompt("Enter booking code to clear this rider (obtain from rider):");
+window.clearSlotPrompt=function(slotKey) {
+  const code=(slotKey==="s1")?slots[slotKey].bookingCode:slots[slotKey].bookingCode;
   if (!code) return;
-  bookingCodeInput.value = code;
-  clearByCode();
+  clearByCode(slotKey,code);
 }
 
-function centerSlot(slotKey) {
+/* ========== Center slot ========== */
+window.centerSlot=function(slotKey) {
   if (!slots[slotKey].marker) return alert("No rider in this slot.");
-  const latlng = slots[slotKey].marker.getLatLng();
-  map.setView(latlng, 15);
+  map.setView(slots[slotKey].marker.getLatLng(), 15);
 }
 
-/* ================= Persist & reconnect ================= */
-// On socket connect server sends bookingConfirmed for any active riders in DB (registerDriver handler)
-socket.on("connect", ()=> {
-  socket.emit("registerDriver", { driverId });
-  // if we are sharing, re-emit last position so server has updated socketId & last pos
-  if (sharing && lastDriverPos) socket.emit("driverLocation", lastDriverPos);
-});
-
-/* ================= Misc ================= */
-socket.on("disconnect", ()=> console.log("Socket disconnected"));
-socket.on("connect_error", err => console.warn("Socket connect error", err));
-
-/* ================= Utility functions ================= */
-function haversineKm(lat1, lon1, lat2, lon2){
+/* ========== Utility: haversine (for ETA) ========== */
+function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
-  const dLat = (lat2-lat1) * Math.PI/180;
-  const dLon = (lon2-lon1) * Math.PI/180;
+  const dLat = (lat2 - lat1) * Math.PI/180;
+  const dLon = (lon2 - lon1) * Math.PI/180;
   const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
-socket.on("bookingCancelled", ({ bookingCode }) => {
-  console.log("Booking cancelled:", bookingCode);
-  alert(`Rider cancelled booking ${bookingCode}`);
+
+/* ========== Auto-start if driverId exists ========== */
+window.addEventListener("load", () => {
+  // show reminder if not logged in
+  if (!driverId) {
+    console.warn("No driverId in localStorage. Please login as driver to use this page.");
+    // do not automatically redirect if you want to test. uncomment to redirect:
+    // window.location.href = "/"; // change to login page
+    return;
+  }
+  startSharing();
 });
-
-
 </script>
+
+<!-- Leaflet + RoutingMachine (loaded after module) -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 </body>
 </html>

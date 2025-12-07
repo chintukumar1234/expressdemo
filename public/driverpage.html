@@ -1,480 +1,472 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Admin Panel — Drivers with Directions (Leaflet + OSRM) — No Socket</title>
+  <title>Admin Panel — Drivers with Directions (No Socket)</title>
 
   <!-- Leaflet CSS -->
-
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 
   <!-- QRCode library (used by your UI) -->
-
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-
-  <!-- 💅 Modern Mobile-Friendly Styles (kept from your original) -->
 
   <style>
     :root { --accent: #0078ff; --muted: #7b8aa3; --bg: #f4f7fb; --card-bg: #fff; --success: #2ea44f; --danger: #d73a49; }
     * { box-sizing: border-box; }
     body { font-family: "Inter", system-ui, Arial, sans-serif; background: var(--bg); margin: 0; padding: 15px; color: #1e293b; }
-    h1 { color: #173a6c; font-size: 1.5rem; margin-bottom: 1rem; text-align: center; }
-    .toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 15px; }
-    #searchInput { padding: 10px 12px; border-radius: 10px; border: 1px solid #d0d6df; width: 100%; max-width: 320px; font-size: 15px; outline: none; transition: 0.2s; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+    h1 { color: var(--accent); font-size: 1.25rem; margin: 0; }
+    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #searchInput { padding: 10px 12px; border-radius: 10px; border: 1px solid #d0d6df; width: 320px; font-size: 15px; outline: none; transition: 0.2s; }
     #searchInput:focus { border-color: var(--accent); box-shadow: 0 0 4px var(--accent); }
-    .tableWrap { background: var(--card-bg); border-radius: 10px; padding: 10px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05); overflow-x: auto; }
+    .tableWrap { background: var(--card-bg); border-radius: 10px; padding: 10px; box-shadow: 0 8px 20px rgba(0,0,0,0.05); overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 650px; }
     th, td { padding: 10px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: top; }
     th { background: var(--accent); color: white; text-transform: uppercase; letter-spacing: 0.03em; }
-    tr.onlineRow:hover { background: #ecfdf5; } tr.offlineRow:hover { background: #fef2f2; }
-    .viewMapBtnR1, .deleteBtn { border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; color: #fff; font-size: 10px; transition: 0.2s; margin: 3px 0;}
-    .viewMapBtnR1 { background: var(--success); } .deleteBtn { background: var(--danger); }
-    .viewMapBtnR1:hover { background: #22b55b; } .deleteBtn:hover { background: #f05252; }
+    tr.onlineRow:hover { background: #ecfdf5; } tr.offlineRow:hover { background: #fff1f1; }
+    .btn { background: var(--accent); color: white; padding: 5px 5px; border-radius: 8px; border: none; cursor: pointer; }
+    .btn.secondary { background: #fff; color: var(--accent); border: 1px solid #e6edf6; }
+    .small { color: var(--muted); font-size: 12px; color:black; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+    .pill { display:inline-block; padding:6px 8px; border-radius:999px; background:#f1f5f9; color:var(--muted); font-size:12px; margin-left:8px; }
+    #mapPopup { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center; }
+    #mapBox { width:92%; height:82%; background:var(--card-bg); border-radius:12px; overflow:hidden; position:relative; box-shadow: 0 10px 40px rgba(0,0,0,0.25); }
+    #mapHeaderBar { display:flex; align-items:center; gap:10px; padding:10px; border-bottom:1px solid #eef2f7; }
+    #mapCanvas { width:100%; height:calc(100% - 56px); } /* header is ~56px */
+    #closeMap { position:absolute; right:14px; top:14px; background: var(--danger); color:white; border:none; width:36px; height:36px; border-radius:50%; cursor:pointer; z-index:99999; }
+    .legend { position:absolute; left:14px; bottom:14px; background:rgba(255,255,255,0.95); padding:10px; border-radius:10px; box-shadow:0 8px 20px rgba(0,0,0,0.06); font-size:13px; }
+    @media (max-width:900px){ #mapBox { width:96%; height:74%; } table { min-width:600px } #searchInput { width:100%; max-width:unset } }
+    .fullmap {position: right; background:#f1eeee; color:rgb(0, 0, 0); border:none; border-radius:8px; cursor:pointer; font-size:29px; }
 
-    .viewMapBtnR2, .deleteBtn { border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; color: #fff; font-size: 10px; transition: 0.2s; margin: 3px 0; }
-    .viewMapBtnR2 { background: var(--success); } .deleteBtn { background: var(--danger); }
-    .viewMapBtnR2:hover { background: #22b55b; } .deleteBtn:hover { background: #f05252; }
-
-    #mapPopup { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); justify-content: center; align-items: center; z-index: 9999; backdrop-filter: blur(4px); }
-    #mapBox { width: 90%; height: 80%; background: var(--card-bg); border-radius: 14px; overflow: hidden; position: relative; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25); animation: fadeIn 0.3s ease; }
-    #mapCanvas { width: 100%; height: 100%; }
-    #closeMap { position: absolute; right: 14px; top: 14px; background: #ff5252; border-radius: 50%; width: 36px; height: 36px; color: #fff; font-weight: bold; border: none; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 99999; }
-
-    .meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--muted); }
-    #driverCount { font-weight: 600; color: var(--accent); }
-    button { border: none; padding: 8px 12px; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; transition: 0.2s; }
-    button:hover { background: #005ed1; }
-    .fullmap { position:absolute; left:96%; top:65px; z-index:99999; background:#f1eeee; color:rgb(0, 0, 0); border:none; border-radius:8px; padding:6px 10px; cursor:pointer; font-size:39px; }
-    @media (max-width: 768px) { h1 { font-size: 1.25rem; } .tableWrap { padding: 6px; } th, td { padding: 8px; font-size: 13px; } #mapBox { width: 95%; height: 70%; } }
-    @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-    .qrcode { position: fixed; padding: 15px; width: 20%; background: rgb(255, 255, 255); border-radius: 15px; box-shadow: 0 4px 15px rgb(0 0 0 / 20%); transform: scale(0); transform-origin: center; transition: transform 0.5s ease; left: 40%; right: 40%; }
-    .qrcodebutton { width: 100%; height: 35px; background-color: rgb(102, 117, 253); border-radius: 16px; cursor: pointer; margin: 10px 0 0 0 ; }
-    .qrcodebutton:hover { background-color: rgb(36, 50, 245); }
-    .qrcodeclose { width: 100%; height: 35px; background-color: rgb(241, 130, 56); border-radius: 16px; cursor: pointer; margin: 10px 0 0 0 ; }
-    .qrcodeclose:hover { background-color: rgb(230, 46, 21); }
-    @media (max-width: 600px) { .qrcode { padding: 12px; width: 90%; left: 5%; } .qrcodebutton { height: 38px; font-size: 15px; } .fullmap{ left:84%; } }
-    .logo { position: absolute; width: 90px; height: 90px; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; }
-    .logo img { width: 70px; }
-    .rider-marker { width: 30px; height: 30px; padding: 6px; background: radial-gradient(circle, #ffffff 40%, #d7f5ff 100%); border-radius: 50%; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25), 0 0 15px #00c3ff; transform: translateY(0); animation: bounce 1.8s infinite ease-in-out; }
-    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-    .rider-marker img { width: 100%; height: 100%; border-radius: 50%; }
+    @media (max-width: 900px) {
+  #mapBox {
+    width: 96%;
+    height: 74%;
+  }
+  table {
+    min-width: 100%;
+    font-size: 12px;
+  }
+  #searchInput {
+    width: 100%;
+    max-width: unset;
+  }
+  .btn {
+    width: 100%;
+    text-align: center;
+  }
+}
   </style>
-
 </head>
 <body>
 
-  <div class="qrcode" id="hiip">
+  <!-- QR UIs (kept from your original; optional) -->
+  <div class="qrcode" id="hiip" style="transform:scale(0); position:fixed; left:40%; top:12%; z-index:12000; background:white; padding:12px; border-radius:12px;">
     <div id="p"></div>
-     <div class="logo">
-        <img src="https://tse1.mm.bing.net/th/id/OIP.r5wSc0-B3GQMSzAjIByfgQHaHZ?rs=1&pid=ImgDetMain&o=7&rm=3" alt="logo">
-      </div>
-    <button class="qrcodeclose" id="payclose">Close QR Code</button>
-  </div>
-    <div class="qrcode" id="hii">
-<div id="q"></div>
-<button class="qrcodebutton" onclick="chintu()">Download QR Code</button>
-<button class="qrcodeclose" id="cliclose">Close QR Code</button>
-</div>
-
-  <div class="toolbar">
-    <div class="meta">
-      <input id="searchInput" placeholder="Search name, gmail or mobile" oninput="renderTable()" />
-      <div>Total: <span id="driverCount">0</span></div>
+    <div style="text-align:center; margin-top:8px;">
+      <button id="payclose" style="background:#f97316;color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer">Close QR</button>
     </div>
+  </div>
+
+  <div class="qrcode" id="hii" style="transform:scale(0); position:fixed; left:40%; top:12%; z-index:12000; background:white; padding:12px; border-radius:12px;">
+    <div id="q"></div>
+    <div style="text-align:center; margin-top:8px;">
+      <button id="chintuDownload" style="background:#4f46e5;color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer">Download QR</button>
+      <button id="cliclose" style="background:#f97316;color:#fff;border:none;padding:8px 12px;border-radius:10px;cursor:pointer;margin-left:6px">Close</button>
+    </div>
+  </div>
+
+  <header>
     <div>
-      <button onclick="renderTable()">Refresh</button>
-      <button id="clickhere">open QR code</button>
-      <button id="payhere" > payment</button>
+      <h1>Admin — Drivers & Live Routes</h1>
+      <div class="small">Monitor drivers, open per-driver map and stream rider location (no sockets).</div>
     </div>
-  </div>
 
-  <div class="tableWrap">
+    <div class="toolbar">
+      <input id="searchInput" placeholder="Search name, gmail or mobile" />
+      <button class="btn" id="refreshBtn">Refresh</button>
+      <div class="pill">Total: <span id="driverCount">0</span></div>
+    </div>
+  </header>
+
+  <main class="tableWrap card">
     <table>
       <thead>
-        <tr>
-          <th>Name</th><th>Gmail</th><th>Mobile</th><th>Status</th><th>Bookings</th><th>Actions</th>
-        </tr>
+        <tr><th>Name</th><th>Status</th><th>Bookings</th><th>Actions</th></tr>
       </thead>
       <tbody id="driverTableBody">
-        <tr><td colspan="6">Loading...</td></tr>
+        <tr><td colspan="6" class="small">Loading drivers…</td></tr>
       </tbody>
     </table>
-  </div>
+  </main>
 
   <!-- Map popup -->
+  <div id="mapPopup" onclick="if(event.target === this) closeMapPopup()">
+    <div id="mapBox" role="dialog" aria-modal="true">
+      <div id="mapHeaderBar">
+        <div id="mapHeader" class="small">Driver: —</div>
+        <div style="flex:1"></div>
+        <label class="small" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="streamRiderToggle" /> <span>Stream rider location</span>
+        </label>
+        <button id="recenterBtn" class="btn secondary" style="margin-left:8px">Recenter</button>
+        <button class="fullmap" id="toggleFullscreen">⛶</button>
+      </div>
 
-  <div id="mapPopup" onclick="if(event.target===this) closeMapPopup()">
-    <div id="mapBox">
-      <button class="fullmap" id="toggleFullscreen">⛶</button>
       <div id="mapCanvas"></div>
+      <div class="legend"><strong>Legend:</strong><br>Green = Driver — Blue = Rider</div>
     </div>
   </div>
 
-  <!-- Leaflet JS (non-module; must be included before module code) -->
-
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
-  <!-- Small inline script for QR code UI (non-module) -->
 
   <script>
-    let activeWatchId = null;
-    const socket = io({
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    transports: ['websocket', 'polling']
-  });
-    document.getElementById("clickhere").addEventListener("click",function(){
-      const result=document.getElementById("q");
-      document.getElementById("q").innerHTML="";
-      new QRCode(result,{ text:"https://peoples-hfmh.onrender.com/", width:300, height:300 });
-      window.chintu=function(){ const img=document.querySelector("#q img"); const link=document.createElement("a"); link.href=img.src; link.download="qr_code.png"; link.click(); }
-      setTimeout(()=>{ document.getElementById("hii").style.transform="scale(1)"; },200);
-    });
+  (function(){
+    // -------------------------
+    // Configuration
+    // -------------------------
+    const API_BASE = ""; // empty -> same origin. fill like "https://your-backend" if different.
+    const POLL_DRIVERS_MS = 12_000;
+    const POLL_DRIVER_MS = 3000;
 
-    document.getElementById("cliclose").addEventListener("click",function(){ document.getElementById("hii").style.transform="scale(0)"; });
+    // -------------------------
+    // State
+    // -------------------------
+    let allDrivers = [];
+    let pollingTimer = null;
+    let mapInstance = null;
+    let driverMarker = null;
+    let riderMarkers = [];
+    let routeLayers = [];
+    let liveWatchId = null;
+    let livePollInterval = null;
+    let activeDriverId = null;
+    let activeRiderId = null;
 
-    document.getElementById("payhere").addEventListener("click",function(){
-      const result=document.getElementById("p"); document.getElementById("p").innerHTML="";
-      new QRCode(result,{ text:"upi://pay?pa=chintukr32101-1@oksbi&pn=Chintu&cu=INR", width:300, height:300 });
-      setTimeout(()=>{ document.getElementById("hiip").style.transform="scale(1)"; },200);
-    });
-    document.getElementById("payclose").addEventListener("click",function(){ document.getElementById("hiip").style.transform="scale(0)"; });
-  </script>
-
-  <!-- Module script (Firebase + app logic) -->
-
-  <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getDatabase, ref, get, onValue, update, remove, off } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyCsZcn4VPhpnlgU0K_NPHPINjq9Qi5iVT8",
-    authDomain: "mydatabase-e7c01.firebaseapp.com",
-    databaseURL: "https://mydatabase-e7c01-default-rtdb.firebaseio.com",
-    projectId: "mydatabase-e7c01",
-    storageBucket: "mydatabase-e7c01.firebasestorage.app",
-    messagingSenderId: "447471871540",
-    appId: "1:447471871540:web:d48721caa65174b1598c61"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
-
-  let allDrivers = {};
-  let currentDriverListener = null; // function to detach per-driver listener
-  const liveRiderMarkers = {};
-  let driverMarker = null;
-  let riderMarkers = [];
-  let activePolylines = [];
-  let currentMap = null;
-  let lastRouteFrom = null; // to debounce route recalculation
-
-  onValue(ref(db, 'drivers'), snapshot => {
-    allDrivers = snapshot.exists() ? snapshot.val() : {};
-    renderTable();
-  });
-  window.renderTable = function () {
+    // -------------------------
+    // DOM
+    // -------------------------
+    const driverCountEl = document.getElementById('driverCount');
     const tbody = document.getElementById('driverTableBody');
-    tbody.innerHTML = '';
-    let count = 0;
+    const searchInput = document.getElementById('searchInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const mapPopup = document.getElementById('mapPopup');
+    const mapCanvas = document.getElementById('mapCanvas');
+    const closeMapBtn = document.getElementById('closeMap');
+    const mapHeader = document.getElementById('mapHeader');
+    const streamToggle = document.getElementById('streamRiderToggle');
+    const recenterBtn = document.getElementById('recenterBtn');
 
-    const q = document.getElementById('searchInput').value.trim().toLowerCase();
-
-    for (const id in allDrivers) {
-      const d = allDrivers[id];
-      if (!d) continue;
-
-      if (q && !((d.name || '').toLowerCase().includes(q) || (d.gmail || '').toLowerCase().includes(q) || (d.mobile || '').includes(q))) continue;
-
-      count++;
-
-      const tr = document.createElement('tr');
-      tr.className = d.online ? 'onlineRow' : 'offlineRow';
-
-      tr.innerHTML = `
-        <tr>
-        <td>${d.name || '-'}</td>
-        <td>${d.gmail || '-'}</td>
-        <td>${d.mobile || '-'}</td>
-        <td>${d.online ? '🟢 Online' : '🔴 Offline'}</td>
-
-        <td>
-            <div>👤 Rider1: ${d.Rider1_id || '-'}</div>
-             <div>Code: ${d.Booking1_code || '-'}</div>
-            <button class="viewMapBtnR1" data-driver="${id}" data-rider="${d.Rider1_id || ''}">🗺️ View R1</button>
-            <hr>
-            <div>👤 Rider2: ${d.Rider2_id || '-'}</div>
-            <div>Code: ${d.Booking2_code || '-'}</div>
-            <button class="viewMapBtnR2" data-driver="${id}" data-rider="${d.Rider2_id || ''}">🗺️ View R2</button>
-        </td>
-
-        <td>
-            <button class="deleteBtn" data-id="${id}">🗑️ Delete</button>
-        </td>
-      </tr>
-
-      `;
-
-      tbody.appendChild(tr);
+    // -------------------------
+    // Helpers: normalize server responses
+    // -------------------------
+    function normalizeDrivers(input){
+      if (!input) return [];
+      if (Array.isArray(input)) return input;
+      if (input.drivers && Array.isArray(input.drivers)) return input.drivers;
+      if (typeof input === 'object') {
+        return Object.keys(input).map(k => ({ id: k, ...(input[k] || {}) }));
+      }
+      return [];
     }
 
-    document.getElementById('driverCount').innerText = count;
+    // -------------------------
+    // Fetch drivers list
+    // -------------------------
+    async function fetchDrivers(){
+      try {
+        const res = await fetch(API_BASE + '/showDrivers');
+        const json = await res.json();
+        return normalizeDrivers(json);
+      } catch (e) {
+        console.error('fetchDrivers error', e);
+        return [];
+      }
+    }
 
-    document.querySelectorAll('.deleteBtn').forEach(btn => {
-      btn.onclick = async () => {
-        const id = btn.dataset.id;
-        const code = prompt('🔐 Enter admin code to delete this driver:');
-        if (code !== 'Chintu@Admin2025') { alert('❌ Invalid code.'); return; }
-        if (!confirm('⚠️ Delete this driver?')) return;
-        try { await remove(ref(db, 'drivers/' + id)); alert('✅ Driver deleted!'); } catch (err) { console.error(err); alert('❌ Failed to delete driver'); }
-      };
-    });
+    // -------------------------
+    // Try to get single driver quickly
+    // -------------------------
+    async function getDriverById(driverId){
+  // Use already fetched allDrivers first
+  const driver = allDrivers.find(d => d.id === driverId);
+  if (driver) return driver;
 
-   document.querySelectorAll('.viewMapBtnR1').forEach(btn => {
-    btn.onclick = () => {
-        const driverId = btn.dataset.driver;
-        const riderId = btn.dataset.rider;
-        openDriverMap(driverId, riderId);
-    };
-});
+  // fallback: fetch /showDrivers again
+  const res = await fetch(API_BASE + '/showDrivers');
+  const json = await res.json();
+  allDrivers = json.drivers || [];
+  return allDrivers.find(d => d.id === driverId) || null;
+}
 
-document.querySelectorAll('.viewMapBtnR2').forEach(btn => {
-    btn.onclick = () => {
-        const driverId = btn.dataset.driver;
-        const riderId = btn.dataset.rider;
-        openDriverMap(driverId, riderId);
-    };
-});
+    // -------------------------
+    // Delete driver
+    // -------------------------
+    async function deleteDriverRemote(driverId){
+      try {
+        const res = await fetch(API_BASE + '/driver/' + encodeURIComponent(driverId), { method: 'DELETE' });
+        if (res.ok) return true;
+      } catch(e){ /* ignore */ }
+      // fallback to admin endpoint
+      try {
+        const res2 = await fetch(API_BASE + '/admin/deleteDriver', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: driverId }) });
+        if (res2.ok) return true;
+      } catch(e){ /* ignore */ }
+      return false;
+    }
 
-  };
+    // -------------------------
+    // Render table rows
+    // -------------------------
+    async function renderTable(){
+      const q = (searchInput.value || '').trim().toLowerCase();
+      tbody.innerHTML = '';
+      const drivers = allDrivers || [];
+      let count = 0;
 
-  function clearMapState() {
-    try {
-      activePolylines.forEach(p => p.remove()); activePolylines = [];
+      for (const d of drivers){
+        if (!d) continue;
+        if (q) {
+          const match = (d.name || '').toLowerCase().includes(q);
+          if (!match) continue;
+        }
+        count++;
+        const tr = document.createElement('tr');
+        tr.className = d.online ? 'onlineRow' : 'offlineRow';
+
+        const r1id = d.Rider1_id || '';
+        const r2id = d.Rider2_id || '';
+
+        tr.innerHTML = `
+          <td>${d.name || '-'}</td>
+          <td>${d.online ? '🟢On' : '🔴Off'}</td>
+          <td>
+            <div class="small">R1: ${r1id || '-' } — Code ${d.Booking1_code || '-'}</div>
+            <div style="margin-top:6px" class="small">R2: ${r2id || '-' } — Code ${d.Booking2_code || '-'}</div>
+            <div class="actions">
+              <button class="btn secondary" data-driver="${d.id}" data-rider="${r1id || ''}" data-action="view-r1">View R1</button>
+              <button class="btn secondary" data-driver="${d.id}" data-rider="${r2id || ''}" data-action="view-r2">View R2</button>
+            </div>
+          </td>
+          <td>
+            <div class="actions">
+              <button class="btn" data-id="${d.id}" data-action="delete">Delete</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      driverCountEl.textContent = count;
+
+      // wire up buttons
+      tbody.querySelectorAll('[data-action="view-r1"], [data-action="view-r2"]').forEach(btn=>{
+        btn.onclick = () => {
+          const driverId = btn.dataset.driver;
+          const riderId = btn.dataset.rider || null;
+          openMapForDriver(driverId, riderId);
+        };
+      });
+
+      tbody.querySelectorAll('[data-action="delete"]').forEach(btn=>{
+        btn.onclick = async () => {
+          const id = btn.dataset.id;
+          const code = prompt('Enter admin code:');
+          if (code !== 'Chintu@Admin2025') { alert('Invalid code'); return; }
+          if (!confirm('Delete this driver?')) return;
+          const ok = await deleteDriverRemote(id);
+          if (ok) { alert('Driver deleted'); await refreshDrivers(); }
+          else alert('Failed to delete driver (endpoint missing or error).');
+        };
+      });
+    }
+
+    // -------------------------
+    // Refresh/load drivers
+    // -------------------------
+    async function refreshDrivers(){
+      allDrivers = await fetchDrivers();
+      await renderTable();
+    }
+
+    // initial load + poll
+    refreshDrivers();
+    if (pollingTimer) clearInterval(pollingTimer);
+    pollingTimer = setInterval(refreshDrivers, POLL_DRIVERS_MS);
+
+    // wire UI
+    refreshBtn.addEventListener('click', refreshDrivers);
+    searchInput.addEventListener('input', renderTable);
+
+    // -------------------------
+    // Map utilities
+    // -------------------------
+    function cleanupMap() {
+      try { if (mapInstance) mapInstance.remove(); } catch(e){}
+      mapInstance = null;
+      driverMarker = null;
       riderMarkers.forEach(m => m.remove()); riderMarkers = [];
-      for (const k in liveRiderMarkers) { try { liveRiderMarkers[k].remove(); } catch {} }
-      Object.keys(liveRiderMarkers).forEach(k => delete liveRiderMarkers[k]);
-      if (driverMarker) { driverMarker.remove(); driverMarker = null; }
-    } catch (e) { console.warn('cleanup error', e); }
-  }
-
-  async function getOsrmRoute(a, b) {
-    try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (!json.routes) return null;
-      return json.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
-    } catch (e) { console.error('OSRM error:', e); return null; }
-  }
-
-  function drawPolylinesFromRoutes(routes) {
-    activePolylines.forEach(p => p.remove()); activePolylines = [];
-    routes.forEach((route, i) => {
-      if (!route || route.length === 0) return;
-      const line = L.polyline(route, { weight: 5, color: i === 0 ? '#0078ff' : '#ff4081' }).addTo(currentMap);
-      activePolylines.push(line);
-    });
-  }
-
-  async function maybeRecalcRoutes(fromPos, riderPoints) {
-    // simple debounce: only recalc if from changed > ~10 meters or lastRouteFrom is null
-    if (!lastRouteFrom) lastRouteFrom = fromPos;
-    const moved = Math.hypot((fromPos.lat - lastRouteFrom.lat), (fromPos.lng - lastRouteFrom.lng)) > 0.00015;
-    if (!moved && activePolylines.length > 0) return;
-    lastRouteFrom = fromPos;
-
-    const routes = [];
-    for (let i = 0; i < riderPoints.length; i++) {
-      const route = await getOsrmRoute(fromPos, riderPoints[i]);
-      routes.push(route);
-    }
-    drawPolylinesFromRoutes(routes);
-  }
-
-async function openDriverMap(driverId, activeRiderId) {
-    const popup = document.getElementById('mapPopup'); 
-    popup.style.display = 'flex';
-
-    const mapEl = document.getElementById('mapCanvas'); 
-    mapEl.innerHTML = '';
-
-    // fetch driver snapshot
-    const snap = await get(ref(db, 'drivers/' + driverId));
-    if (!snap.exists()) { 
-        alert('Driver not found'); 
-        return; 
+      routeLayers.forEach(l => l.remove()); routeLayers = [];
+      routeLayers = [];
+      if (liveWatchId !== null) { navigator.geolocation.clearWatch(liveWatchId); liveWatchId = null; }
+      if (livePollInterval) { clearInterval(livePollInterval); livePollInterval = null; }
+      activeDriverId = null;
+      activeRiderId = null;
     }
 
-    let driver = snap.val();
-    if (!driver.Driver_lat || !driver.Driver_lng) { 
-        alert('Driver has no location'); 
-        return; 
+    async function getOsrmRoute(a, b){
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const j = await res.json();
+        if (!j || !j.routes || !j.routes[0]) return null;
+        return j.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+      } catch (e) { console.error('OSRM error', e); return null; }
     }
 
-    // 🟢 FIXED — check if rider exists
-    if (!driver.Rider1_id && !driver.Rider2_id) {
-        alert("No rider assigned to this driver");
-        return;
+    function drawRoutes(listOfCoords){
+      // clear old
+      routeLayers.forEach(l => l.remove());
+      routeLayers = [];
+      listOfCoords.forEach((coords, i) => {
+        if (!coords || !coords.length) return;
+        const line = L.polyline(coords, { color: i === 0 ? '#0078ff' : '#ef4444', weight: 5 }).addTo(mapInstance);
+        routeLayers.push(line);
+      });
     }
 
-    // 🟢 FIXED — Start sending LIVE rider location to backend
-// 🟢 STOP OLD WATCHER BEFORE STARTING NEW
-if (activeWatchId !== null) {
-    navigator.geolocation.clearWatch(activeWatchId);
-    activeWatchId = null;
-}
+    async function recalcRoutes(origin, riders){
+      const results = [];
+      for (const r of riders){
+        const coords = await getOsrmRoute(origin, r);
+        results.push(coords);
+      }
+      drawRoutes(results);
+    }
 
-// 🟢 START SAFE WATCHER FOR THIS ONLY RIDER
-activeWatchId = navigator.geolocation.watchPosition((pos) => {
+    // -------------------------
+    // Open map for driver
+    // -------------------------
+    async function openMapForDriver(driverId, riderId){
+      mapPopup.style.display = 'flex';
+      cleanupMap();
 
-    if (!activeRiderId) return;
+      activeDriverId = driverId;
+      activeRiderId = riderId;
 
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
+      const driver = await getDriverById(driverId);
+      if (!driver) { alert('Driver not found'); mapPopup.style.display = 'none'; return; }
+      if (!driver.Driver_lat || !driver.Driver_lng) { alert('Driver has no location'); mapPopup.style.display = 'none'; return; }
 
-    socket.emit("riderLiveLocation", {
-        riderId: activeRiderId,
-        lat,
-        lng
-    });
+      // create map
+     mapInstance = L.map(mapCanvas).setView([Number(driver.Driver_lat), Number(driver.Driver_lng)], 14);
+     // OpenStreetMap (default street map)
+const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(mapInstance); // add as default
 
-}, (err) => {
-    console.error("Geolocation error:", err);
-}, {
-    enableHighAccuracy: true,
-    maximumAge: 1000,
-    timeout: 10000
+// Satellite / World Image layer
+const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/' +
+  'World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, USGS',
+  maxZoom: 19
 });
+const baseMaps = {
+  "Street Map": osmLayer,
+  "Satellite": satelliteLayer
+};
 
-    // create map
-    currentMap = L.map(mapEl);
-    currentMap.setView([driver.Driver_lat, driver.Driver_lng], 15);
+L.control.layers(baseMaps).addTo(mapInstance);
 
-    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(currentMap);
-    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
-    L.control.layers({ Street: streetLayer, Satellite: satelliteLayer }, {}, { position: 'topright' }).addTo(currentMap);
 
-    const driverIcon = L.icon({ iconUrl: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png', iconSize: [32,32], iconAnchor: [16,32] });
-    const riderIcon = L.icon({ iconUrl: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [28,28], iconAnchor: [14,28] });
-    const riderLiveIcon = L.divIcon({ className: 'custom-rider', html: `<div class="rider-marker"><img src="https://cdn-icons-png.flaticon.com/128/1783/1783356.png"></div>`, iconSize: [40,40], iconAnchor: [15,42] });
+      driverMarker = L.marker([Number(driver.Driver_lat), Number(driver.Driver_lng)], { title: 'Driver' }).addTo(mapInstance);
 
-    clearMapState();
+      const riderPoints = [];
+      if (driver.Rider1_lat && driver.Rider1_lng) riderPoints.push({ lat: Number(driver.Rider1_lat), lng: Number(driver.Rider1_lng), id: driver.Rider1_id, label: 'Rider 1' });
+      if (driver.Rider2_lat && driver.Rider2_lng) riderPoints.push({ lat: Number(driver.Rider2_lat), lng: Number(driver.Rider2_lng), id: driver.Rider2_id, label: 'Rider 2' });
 
-    driverMarker = L.marker([driver.Driver_lat, driver.Driver_lng], { icon: driverIcon }).addTo(currentMap);
+      riderMarkers = riderPoints.map(r => L.marker([r.lat, r.lng], { title: r.label }).addTo(mapInstance));
+      if (riderPoints.length) await recalcRoutes({ lat: Number(driver.Driver_lat), lng: Number(driver.Driver_lng) }, riderPoints);
 
-    const riderPoints = [];
-    if (driver.Rider1_lat && driver.Rider1_lng)
-        riderPoints.push({ lat: Number(driver.Rider1_lat), lng: Number(driver.Rider1_lng), label: 'Rider 1', id: driver.Rider1_id });
-    if (driver.Rider2_lat && driver.Rider2_lng)
-        riderPoints.push({ lat: Number(driver.Rider2_lat), lng: Number(driver.Rider2_lng), label: 'Rider 2', id: driver.Rider2_id });
+      mapHeader.textContent = `Driver: ${driver.name || driverId} — ${driver.mobile || ''}`;
 
-    riderMarkers = riderPoints.map(r =>
-        L.marker([r.lat, r.lng], { icon: riderIcon }).addTo(currentMap).bindTooltip(r.label)
-    );
+      // start polling driver node for updates
+      if (livePollInterval) clearInterval(livePollInterval);
+      livePollInterval = setInterval(async () => {
+        const latest = await getDriverById(driverId);
+        if (!latest) return;
+        if (latest.Driver_lat && latest.Driver_lng) {
+          const latN = Number(latest.Driver_lat);
+          const lngN = Number(latest.Driver_lng);
+          driverMarker.setLatLng([latN, lngN]);
+          // update rider markers
+          const pts = [];
+          if (latest.Rider1_lat && latest.Rider1_lng) pts.push({ lat: Number(latest.Rider1_lat), lng: Number(latest.Rider1_lng), id: latest.Rider1_id });
+          if (latest.Rider2_lat && latest.Rider2_lng) pts.push({ lat: Number(latest.Rider2_lat), lng: Number(latest.Rider2_lng), id: latest.Rider2_id });
 
-    await maybeRecalcRoutes({ lat: driver.Driver_lat, lng: driver.Driver_lng }, riderPoints);
+          riderMarkers.forEach(m => m.remove());
+          riderMarkers = pts.map(p => L.marker([p.lat, p.lng]).addTo(mapInstance));
 
-    // Firebase live listener
-    const driverRef = ref(db, 'drivers/' + driverId);
+          if (pts.length) recalcRoutes({ lat: latN, lng: lngN }, pts);
+        }
+      }, POLL_DRIVER_MS);
 
-    if (currentDriverListener) {
-        try { currentDriverListener(); } catch {}
-        currentDriverListener = null;
+      // stream toggle handler
+      streamToggle.checked = false;
+      streamToggle.onchange = async () => {
+        if (!streamToggle.checked) {
+          if (liveWatchId !== null) { navigator.geolocation.clearWatch(liveWatchId); liveWatchId = null; }
+          return;
+        }
+        if (!activeRiderId) { alert('No rider selected to stream location for.'); streamToggle.checked = false; return; }
+        if (!navigator.geolocation) { alert('Geolocation not supported'); streamToggle.checked = false; return; }
+
+        // watch and POST to /riderLocation
+        liveWatchId = navigator.geolocation.watchPosition(async pos => {
+          const lat = pos.coords.latitude, lng = pos.coords.longitude;
+          try {
+            await fetch(API_BASE + '/riderLocation', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ riderId: activeRiderId, lat, lng })
+            });
+          } catch (e) { console.error('stream error', e); }
+        }, err => { console.error('geolocation watch error', err); }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+      };
+
+      recenterBtn.onclick = () => {
+        if (driverMarker && mapInstance) mapInstance.setView(driverMarker.getLatLng(), 15);
+      };
     }
 
-    const listener = onValue(driverRef, async (s) => {
-        if (!s.exists()) return;
-        const d = s.val();
+    // -------------------------
+    // Close popup
+    // -------------------------
+    function closeMapPopup(){
+      mapPopup.style.display = 'none';
+      cleanupMap();
+    }
 
-        // update driver marker
-        if (d.Driver_lat && d.Driver_lng) {
-            if (!driverMarker) driverMarker = L.marker([d.Driver_lat, d.Driver_lng], { icon: driverIcon }).addTo(currentMap);
-            else driverMarker.setLatLng([d.Driver_lat, d.Driver_lng]);
-        }
+    // expose functions to global (if needed)
+    window.openMapForDriver = openMapForDriver;
+    window.closeMapPopup = closeMapPopup;
 
-        // refresh static markers
-        const newRiderPoints = [];
-        if (d.Rider1_lat && d.Rider1_lng) newRiderPoints.push({ lat: Number(d.Rider1_lat), lng: Number(d.Rider1_lng), label: 'Rider 1', id: d.Rider1_id });
-        if (d.Rider2_lat && d.Rider2_lng) newRiderPoints.push({ lat: Number(d.Rider2_lat), lng: Number(d.Rider2_lng), label: 'Rider 2', id: d.Rider2_id });
+    // initial load
+    (async function init(){
+      allDrivers = await fetchDrivers();
+      await renderTable();
+      setInterval(async ()=>{
+        allDrivers = await fetchDrivers();
+        await renderTable();
+      }, POLL_DRIVERS_MS);
+    })();
 
-        riderMarkers.forEach(m => m.remove());
-        riderMarkers = [];
-        newRiderPoints.forEach(r => {
-            riderMarkers.push(L.marker([r.lat, r.lng], { icon: riderIcon }).addTo(currentMap).bindTooltip(r.label));
-        });
+  })();
 
-        // live rider markers
-        [['Rider1_id','Rider1_lat','Rider1_lng'], ['Rider2_id','Rider2_lat','Rider2_lng']].forEach(([idKey, latKey, lngKey]) => {
-            const rid = d[idKey];
-            const rlat = d[latKey];
-            const rlng = d[lngKey];
-            if (!rid) return;
-
-            if (!liveRiderMarkers[rid]) {
-                liveRiderMarkers[rid] = L.marker([rlat, rlng], { icon: riderLiveIcon }).addTo(currentMap);
-            } else {
-                liveRiderMarkers[rid].setLatLng([rlat, rlng]);
-            }
-        });
-
-        // update routes
-        if (d.Driver_lat && d.Driver_lng) {
-            await maybeRecalcRoutes({ lat: d.Driver_lat, lng: d.Driver_lng }, newRiderPoints);
-        }
-    });
-
-    currentDriverListener = () => off(driverRef, 'value', listener);
-
-    popup._leafletCleanup = () => {
-        try { if (currentDriverListener) { currentDriverListener(); currentDriverListener = null; } } catch {}
-        clearMapState();
-        if (currentMap) { try { currentMap.remove(); } catch {} currentMap = null; }
-        lastRouteFrom = null;
-    };
-}
-
-   
-  // Assume you want Rider1 for a specific driver
-onValue(ref(db, 'drivers'), snapshot => {
-  allDrivers = snapshot.exists() ? snapshot.val() : {};
-
-  // Pick the driver you want (example: first one)
-  const driverIds = Object.keys(allDrivers);
-  if (driverIds.length === 0) return;
-
-  const driver = allDrivers[driverIds[0]]; // first driver
-  const riderIdFromLogin = driver.Rider1_id || driver.Rider2_id; // pick a rider
-  if (!riderIdFromLogin) return;
-
-  // Start geolocation tracking **once**
-  navigator.geolocation.watchPosition((pos) => {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-
-    socket.emit("riderLiveLocation", {
-      riderId: riderIdFromLogin,
-      lat,
-      lng,
-    });
-  });
-});
-
-  window.openDriverMap = openDriverMap;
-
-  window.closeMapPopup = function() {
-    // 🛑 STOP GPS WATCHER WHEN MAP CLOSES
-if (activeWatchId !== null) {
-    navigator.geolocation.clearWatch(activeWatchId);
-    activeWatchId = null;
-}
-
-    const popup = document.getElementById('mapPopup'); if (!popup) return; if (popup._leafletCleanup) popup._leafletCleanup(); popup.style.display = 'none';
-  };
-
-  document.addEventListener('click', e => {
+   document.addEventListener('click', e => {
     if (e.target.id === 'toggleFullscreen') {
       const el = document.getElementById('mapBox');
       if (!document.fullscreenElement) { el.requestFullscreen().catch(err => console.error(err)); } else { document.exitFullscreen(); }

@@ -524,8 +524,8 @@
         <label for="name">Name</label>
       <input type="text" id="name" name="name" placeholder="Enter the name" required />
 
-      <label for="mobile">Mobile No.</label>
-      <input type="text" id="mobile" name="mobile" placeholder="Enter the mobile no..." required />
+      <label for="emobile">Mobile No.</label>
+      <input type="text" id="emobile" name="emobile" placeholder="Enter the mobile no..." required />
 
       <label for="gmail">Gmail</label>
       <input type="email" id="gmail" name="gmail" placeholder="Enter the gmail" required />
@@ -547,319 +547,275 @@
 
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
 <script type="module">
-    const socket = io({
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    transports: ['websocket', 'polling']
+  // ---------------- DRIVER REDIRECTION ----------------
+  document.getElementById("driverdel").addEventListener("click", function() {
+    window.location.href = "index1page.html";
   });
 
-
-  document.getElementById("driverdel").addEventListener("click",function(){
-    window.location.href="index1page.html";
-  });
   const showDriversBtn = document.getElementById('showDriversBtn');
   const driversList = document.getElementById('driversList');
   const pickupInput = document.getElementById('pickup');
   const mobileInput = document.getElementById('mobile');
   const destinationInput = document.getElementById('destination');
-  
-    // 🌍 Send rider's real GPS location to server
-   let driverData={};
-   let myCoords = null;
+
+  // 🌍 Rider location (sent every 5 seconds)
+  let myCoords = null;
   if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(
-      (pos) => {
+    setInterval(async () => {
+      navigator.geolocation.getCurrentPosition(async (pos) => {
         myCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        socket.emit('riderLocation', myCoords);
-      },
-      (err) => console.warn("Location access denied:", err),
-      { enableHighAccuracy: true, maximumAge: 10000 }
-    );
+        try {
+          await fetch("/updateRiderLocation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(myCoords)
+          });
+        } catch (err) {
+          console.error("Error updating location:", err);
+        }
+      });
+    }, 5000);
   } else {
     alert("Geolocation is not supported in your browser.");
   }
 
-  socket.on('updateDrivers', (drivers) => {
-    driversData = drivers;
-  });
-
-    showDriversBtn.addEventListener('click', () => {
+  // ---------------- SHOW DRIVERS ----------------
+  showDriversBtn.addEventListener('click', () => {
     const pickup = pickupInput.value.trim();
     const destination = destinationInput.value.trim();
-    const mobile=mobileInput.value.trim();
-    //driver information
+    const semobile = mobileInput.value.trim();
     const popup = document.getElementById("popup");
-    if(pickup==="Driverdanapur"&&destination==="chintukr@@123"){
-     popup.style.display = "flex";
+
+    if(pickup === "Driverdanapur" && destination === "chintukr@@123" && semobile=== "9576718589") {
+      popup.style.display = "flex";
       pickupInput.value = "";
-    destinationInput.value = "";
-     return ;
+      destinationInput.value = "";
+      mobileInput.value = "";
+      return;
     }
-    
+
     if (!pickup) {
-      document.getElementById("message1").innerHTML=`<span class="mess">Please Enter pickup point</span>`;
-      setTimeout(()=>{
-        document.getElementById("message1").innerHTML='';
-      },5000);
+      document.getElementById("message1").innerHTML = `<span class="mess">Please Enter pickup point</span>`;
+      setTimeout(() => { document.getElementById("message1").innerHTML = ''; }, 5000);
       return;
-    }else if (!destination){
-      document.getElementById("message2").innerHTML=`<span class="mess">Please Enter destination point</span>`;
-      setTimeout(()=>{
-        document.getElementById("message2").innerHTML='';
-      },5000);
+    } else if (!destination) {
+      document.getElementById("message2").innerHTML = `<span class="mess">Please Enter destination point</span>`;
+      setTimeout(() => { document.getElementById("message2").innerHTML = ''; }, 5000);
       return;
-    }else if(!mobile){
-       document.getElementById("message3").innerHTML=`<span class="mess">Please Enter mobile no..</span>`;
-      setTimeout(()=>{
-        document.getElementById("message3").innerHTML='';
-      },5000);
+    } else if (!mobile || !semobile) {
+      document.getElementById("message3").innerHTML = `<span class="mess">Please Enter mobile no..</span>`;
+      setTimeout(() => { document.getElementById("message3").innerHTML = ''; }, 5000);
       return;
     }
+
     updateDriverList();
   });
 
-  window.c=function() {
+  window.c = function() {
     document.getElementById("popup").style.display = "none";
   }
 
-  window.openLoginPopup=function(){
-  document.getElementById('loginPopup').style.display="flex";
-}
+  window.openLoginPopup = function() {
+    document.getElementById('loginPopup').style.display = "flex";
+  }
 
-window.closePopups=function(){
-  document.getElementById('loginPopup').style.display="none";
-}
- 
-document.getElementById("registerForm").addEventListener("submit", (e) => {
-  e.preventDefault();
+  window.closePopups = function() {
+    document.getElementById('loginPopup').style.display = "none";
+  }
 
-  const msg = document.getElementById("message");
-  msg.innerText = "📍 Getting location...";
+  // ---------------- REGISTER DRIVER ----------------
+  document.getElementById("registerForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const msg = document.getElementById("message");
+    msg.innerText = "📍 Getting location...";
 
-  navigator.geolocation.getCurrentPosition(async (pos) => {
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
 
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
+      const name = document.getElementById("name").value.trim();
+      const mobile = document.getElementById("emobile").value.trim();
+      const gmail = document.getElementById("gmail").value.trim();
+      const password = document.getElementById("password").value;
+      const conform = document.getElementById("conform").value;
 
-    const name = document.getElementById("name").value.trim();
-    const mobile = document.getElementById("mobile").value.trim();
-    const gmail = document.getElementById("gmail").value.trim();
-    const password = document.getElementById("password").value;
-    const conform = document.getElementById("conform").value;
+      msg.innerText = "";
 
-    msg.innerText = "";
+      if (!name || !mobile || !gmail || !password || !conform) {
+        msg.innerText = "⚠️ All fields are required!";
+        return;
+      }
+      if (password !== conform) {
+        msg.innerText = "⚠️ Passwords do not match!";
+        return;
+      }
 
-    if (!name || !mobile || !gmail || !password || !conform) {
-      msg.innerText = "⚠️ All fields are required!";
-      return;
-    }
-    if (password !== conform) {
-      msg.innerText = "⚠️ Passwords do not match!";
-      return;
-    }
+      const data = { name, gmail, password, mobile, lat, lng };
 
-    const data = { name, gmail, password, mobile, lat, lng };
+      try {
+        const res = await fetch("/insert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        });
 
-    try {
-      const res = await fetch("/insert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
+        const out = await res.json();
+        msg.innerText = out.message;
+      } catch (err) {
+        msg.innerText = "❌ Error: " + err;
+      }
 
-      const out = await res.json();
-      msg.innerText = out.message;
-    } catch (err) {
-      msg.innerText = "❌ Error: " + err;
-    }
+    }, () => {
+      msg.innerText = "❌ Location access denied!";
+    });
 
-  }, () => {
-    msg.innerText = "❌ Location access denied!";
   });
 
-});
+  // ---------------- UPDATE DRIVER LIST ----------------
+  async function updateDriverList() {
+    const driversList = document.getElementById("driversList");
+    driversList.innerHTML = "";
 
-// 🧾 Display available drivers dynamically (from backend)
-async function updateDriverList() {
-  const driversList = document.getElementById("driversList");
-  driversList.innerHTML = "";
+    try {
+      const res = await fetch("/showDrivers", { method: "GET" });
+      const data = await res.json();
+      const drivers = data.drivers;
 
-  try {
-    const res = await fetch("/show", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" }
-    });
+      if (!drivers || drivers.length === 0) {
+        driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
+        return;
+      }
 
-    const data = await res.json();
-    const drivers = data.drivers;
+      drivers.forEach(d => {
+        if (!d.Rider1_id || !d.Rider2_id) {
+          const div = document.createElement("div");
+          div.className = "driverItem";
+          div.innerHTML = `<span>🚗 ${d.name} (${d.mobile})</span>`;
 
-    if (!drivers || drivers.length === 0) {
-      driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
+          const btn = document.createElement("button");
+          btn.textContent = "Book";
+          btn.onclick = () => bookDriver(d.id);
+
+          div.appendChild(btn);
+          driversList.appendChild(div);
+        }
+      });
+    } catch (error) {
+      console.error(error);
+      driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
+    }
+  }
+  window.updateDriverList = updateDriverList;
+
+  // ---------------- BOOK DRIVER ----------------
+  async function bookDriver(driverId) {
+    const pickup = pickupInput.value.trim();
+    const destination = destinationInput.value.trim();
+    const mobile = mobileInput.value.trim();
+
+    if (!pickup || !destination ) {
+      alert("Please enter pickup and destination!");
       return;
     }
 
-    drivers.forEach(d => {
-      if(!d.Rider1_id||!d.Rider2_id){
-      const div = document.createElement("div");
-      div.className = "driverItem";
+    const lat = myCoords ? myCoords.lat : null;
+    const lng = myCoords ? myCoords.lng : null;
 
-      div.innerHTML = `<span>🚗 ${d.name} (${d.mobile})</span>`;
-
-      const btn = document.createElement("button");
-      btn.textContent = "Book";
-      btn.onclick = () => bookDriver(d.id);
-
-      div.appendChild(btn);
-      driversList.appendChild(div);
-      }
-    });
-
-  } catch (error) {
-    console.error(error);
-    driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
-  }
-}
-
-window.updateDriverList = updateDriverList;
-
-    function bookDriver(driverId) {
-
-  const pickup = document.getElementById("pickup").value.trim();
-  const destination = document.getElementById("destination").value.trim();
-
-  if (!pickup || !destination) {
-    alert("Please enter pickup and destination!");
-    return;
-  }
- const lat = myCoords ? myCoords.lat : null;
-const lng = myCoords ? myCoords.lng : null;
-    // Prepare full booking data object
     if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
-  alert("❌ Unable to get your location. Please enable GPS or try again.");
-  return;
-}
+      alert("❌ Unable to get your location. Please enable GPS or try again.");
+      return;
+    }
 
     const bookingData = {
       driverId,
-      riderId:Math.random().toString(36).substring(2, 12).toUpperCase(),             // You can generate real ID later
-      code:Math.random().toString(36).substring(2, 8).toUpperCase(),      // Unique booking code
+      riderId: Math.random().toString(36).substring(2, 12).toUpperCase(),
+      code: Math.random().toString(36).substring(2, 8).toUpperCase(),
       lat,
       lng,
       createdAt: Date.now(),
       pickup,
-      destination
+      destination,
+      mobile
     };
 
-    console.log("📤 Sending booking:", bookingData);
+    try {
+      const res = await fetch("/bookDriver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bookingData)
+      });
+      const data = await res.json();
 
-    // Send to backend using socket.io
-     pickupInput.value = "";
-    destinationInput.value = "";
-    mobileInput.value="";
-    socket.emit("bookDriver", bookingData);
+      if (data.success) {
+        celebrate();
+        showPopup(`✨ Driver Booked Successfully! ✨
+🚖 Booking Code: ${data.bookingCode}
+🎉 Your ride is confirmed`);
+        const btn = [...document.querySelectorAll(".driverItem button")].find(
+          b => b.parentElement.textContent.includes(driverId.substring(0, 6))
+        );
+        if (btn) { btn.textContent = "Booked"; btn.disabled = true; }
 
-  
-}
-
-    // =====================================================
-//  POPUP + CELEBRATION FUNCTIONS (defined once)
-// =====================================================
-
-function showPopup(message) {
-  const popupBg   = document.getElementById("popup-bg");
-  const popupText = document.getElementById("popup-message");
-
-  popupText.innerText = message;
-  popupBg.style.display = "flex";
-
-  popupBg.classList.remove("fade-in");
-  void popupBg.offsetWidth;
-  popupBg.classList.add("fade-in");
-}
-
-window.closePopup = function () {
-  const popupBg = document.getElementById("popup-bg");
-
-  popupBg.classList.remove("fade-in");
-  popupBg.classList.add("fade-out");
-
-  setTimeout(() => {
-    popupBg.style.display = "none";
-    popupBg.classList.remove("fade-out");
-  }, 300);
-};
-
-function celebrate() {
-  confetti({
-    particleCount: 2000,
-    spread: 90,
-    startVelocity: 45,
-    origin: { y: 0.7 }
-  });
-}
-
-// =====================================================
-//  SOCKET EVENTS
-// =====================================================
-
-// ✅ Booking Success
-socket.on("bookingSuccess", ({ driverId, bookingData }) => {
-
-  // bookingData contains:
-  // { bookingCode, lat, lng, slot, createdAt }
-
-  const bookingCode = bookingData.bookingCode;
-
-  celebrate();
-
-  showPopup(
-    `✨ Driver Booked Successfully! ✨
-🚖 Booking Code: ${bookingCode}
-🎉 Your ride is confirmed`
-  );
-
-  // Disable the booked driver button
-  const btn = [...document.querySelectorAll(".driverItem button")].find(
-    (b) => b.parentElement.textContent.includes(driverId.substring(0, 6))
-  );
-
-  if (btn) {
-    btn.textContent = "Booked";
-    btn.disabled = true;
-  }
-});
-
-
-// ❌ Booking Failed
-socket.on("bookingFailed", (msg) => {
-  alert(`❌ Booking failed: ${msg}`);
-  console.log("Booking error:", msg);
-});
-
-//now here is the login logic for driver
-window.loginDriver = function () {
-  const loginGmail = document.getElementById("loginGmail").value.trim();
-  const loginPassword = document.getElementById("loginPassword").value.trim();
-
-  if (!loginGmail) {
-    alert("Please enter the gmail");
-    return;
+        pickupInput.value = "";
+        destinationInput.value = "";
+        mobileInput.value = "";
+      } else {
+        alert(`❌ Booking failed: ${data.message}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Error booking driver: " + err);
+    }
   }
 
-  if (!loginPassword) {
-    alert("Please enter the password");
-    return;
+  window.bookDriver = bookDriver;
+
+  // ---------------- POPUP & CELEBRATION ----------------
+  function showPopup(message) {
+    const popupBg = document.getElementById("popup-bg");
+    const popupText = document.getElementById("popup-message");
+    popupText.innerText = message;
+    popupBg.style.display = "flex";
+    popupBg.classList.remove("fade-in");
+    void popupBg.offsetWidth;
+    popupBg.classList.add("fade-in");
   }
 
-  fetch("/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ gmail: loginGmail, password: loginPassword })
-  })
+  window.closePopup = function() {
+    const popupBg = document.getElementById("popup-bg");
+    popupBg.classList.remove("fade-in");
+    popupBg.classList.add("fade-out");
+    setTimeout(() => {
+      popupBg.style.display = "none";
+      popupBg.classList.remove("fade-out");
+    }, 300);
+  }
+
+  function celebrate() {
+    confetti({
+      particleCount: 2000,
+      spread: 90,
+      startVelocity: 45,
+      origin: { y: 0.7 }
+    });
+  }
+
+  // ---------------- DRIVER LOGIN ----------------
+  window.loginDriver = function() {
+    const loginGmail = document.getElementById("loginGmail").value.trim();
+    const loginPassword = document.getElementById("loginPassword").value.trim();
+
+    if (!loginGmail) { alert("Please enter the gmail"); return; }
+    if (!loginPassword) { alert("Please enter the password"); return; }
+
+    fetch("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gmail: loginGmail, password: loginPassword })
+    })
     .then(res => res.json())
     .then(data => {
       console.log("Response:", data);
-
       if (data.error) {
         alert(data.error);
       } else {
@@ -868,9 +824,9 @@ window.loginDriver = function () {
         window.location.href = "message.html";
       }
     });
-};
-
+  };
 </script>
+
 <div class="popup-overlay" id="loginPopup">
   <div class="booking-form">
     <button class="close-btn" onclick="closePopups()">×</button>
