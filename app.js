@@ -470,26 +470,21 @@ io.on("connection", (socket) => {
   });
 
   /* Clean disconnect */
-  socket.on("disconnect", async (reason) => {
-    logger.info(`Socket disconnected: ${socket.id} reason: ${reason}`);
-    if (!socket.driverId) return;
-    const did = socket.driverId;
+ socket.on("disconnect", () => {
+        console.log("🔴 Socket disconnected:", socket.id);
 
-    // If you specifically WANT to keep online=1 on disconnect (per earlier conversation),
-    // change the update here. By default we'll set online = 0 to reflect disconnect.
-    // To keep online=1, change the value below to 1.
-    const KEEP_ONLINE_ON_DISCONNECT = false;
+        if (driverId) {
+            console.log(`⚠ driver(${driverId}) disconnected — keeping online = 1`);
 
-    try {
-      await update(ref(db, `drivers/${did}`), { online: KEEP_ONLINE_ON_DISCONNECT ? 1 : 0 });
-    } catch (e) {
-      logger.warn("Failed to update DB online flag on disconnect: " + safeJSON(e));
-    }
+            // DO NOT SET ONLINE = 0  
+            // Because you want driver to stay ONLINE always
 
-    // remove in-memory mapping
-    delete drivers[did];
-    logger.info(`Removed driver from memory: ${did}`);
-  });
+            // Cleanup socket memory
+            if (connectedDrivers[driverId]) {
+                delete connectedDrivers[driverId];
+            }
+        }
+    });
 
   /* safety: catch uncaught errors in socket handlers */
   socket.on("error", (err) => {
