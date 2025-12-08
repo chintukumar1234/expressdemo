@@ -680,50 +680,66 @@
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
   // ---------------- UPDATE DRIVER LIST ----------------
-// ---------------- UPDATE DRIVER LIST ----------------
 async function updateDriverList() {
   const driversList = document.getElementById("driversList");
   driversList.innerHTML = "";
 
-  // STEP 1: Get rider location
   let riderLat = null, riderLng = null;
 
-  if (navigator.geolocation) {
-    await new Promise(resolve => {
-      navigator.geolocation.getCurrentPosition(pos => {
-        riderLat = pos.coords.latitude;
-        riderLng = pos.coords.longitude;
-        resolve();
-      }, resolve);
-    });
+  // STEP 1: Get rider location only if browser supports
+  try {
+    if (navigator.geolocation) {
+      await new Promise(resolve => {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            riderLat = pos.coords.latitude;
+            riderLng = pos.coords.longitude;
+            resolve();
+          },
+          () => resolve(),   // ignore geolocation error
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
+        );
+      });
+    }
+  } catch (e) {
+    console.warn("Geolocation failed:", e);
   }
 
   try {
-    const res = await fetch("/showDrivers", { method: "GET" });
-    let drivers = (await res.json()).drivers;
+    const res = await fetch("/showDrivers");
+    const out = await res.json();
+    let drivers = out.drivers || [];
 
-    if (!drivers || drivers.length === 0) {
+    if (drivers.length === 0) {
       driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
       return;
     }
 
-    // STEP 2: Add distance to each driver
-    drivers = drivers.map(d => {
-      if (d.Driver_lat && d.Driver_lng && riderLat && riderLng) {
+    // STEP 2: Compute distance (fast + safe)
+    drivers.forEach(d => {
+      if (
+        riderLat !== null &&
+        riderLng !== null &&
+        d.Driver_lat &&
+        d.Driver_lng
+      ) {
         d.distance = getDistanceKm(
-          riderLat, riderLng,
-          Number(d.Driver_lat), Number(d.Driver_lng)
+          riderLat,
+          riderLng,
+          Number(d.Driver_lat),
+          Number(d.Driver_lng)
         );
       } else {
-        d.distance = Infinity;
+        d.distance = Number.POSITIVE_INFINITY;
       }
-      return d;
     });
 
-    // STEP 3: Sort by nearest
+    // STEP 3: Sort (nearest first) — super fast
     drivers.sort((a, b) => a.distance - b.distance);
 
-    // STEP 4: Display
+    // STEP 4: Render
+    const frag = document.createDocumentFragment(); // faster DOM rendering
+
     drivers.forEach(d => {
       if (!d.Rider1_id || !d.Rider2_id) {
         const div = document.createElement("div");
@@ -731,10 +747,14 @@ async function updateDriverList() {
 
         div.innerHTML = `
           <span>
-            🚗 ${d.name} (${d.mobile})
+            🚗 ${d.name || "Unknown"} (${d.mobile || "N/A"})
             <br>
             <small style='color:#0078ff;'>
-              ${d.distance === Infinity ? "Distance unavailable" : d.distance.toFixed(2) + " km away"}
+              ${
+                d.distance === Infinity
+                  ? "Distance unavailable"
+                  : d.distance.toFixed(2) + " km away"
+              }
             </small>
           </span>
         `;
@@ -744,15 +764,18 @@ async function updateDriverList() {
         btn.onclick = () => bookDriver(d.id);
 
         div.appendChild(btn);
-        driversList.appendChild(div);
+        frag.appendChild(div);
       }
     });
+
+    driversList.appendChild(frag);
 
   } catch (error) {
     console.error(error);
     driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
   }
 }
+
 window.updateDriverList = updateDriverList;
 
   // ---------------- BOOK DRIVER ----------------
