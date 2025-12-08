@@ -461,7 +461,7 @@
   <div class="main">
     <div class="intro">
       <h2>Experience Real-Time Ride Tracking</h2>
-      <p>Open the app as a <strong>Driver</strong> or <strong>Rider</strong> on different devices and see live location updates using GPS</p>
+      <p>Open the app as a <strong>Driver</strong> or <strong>Rider</strong> on different devices and see live AI-based location updates using GPS and Socket.io.</p>
     </div>
 
     <!-- Booking form -->
@@ -541,6 +541,11 @@
       </form>
     </div>
   </div>
+  <footer>
+    © 2025 <span>AI Cab Tracker</span> | Built with ❤️ by Chintu
+  </footer>
+
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
 <script type="module">
   // ---------------- DRIVER REDIRECTION ----------------
   document.getElementById("driverdel").addEventListener("click", function() {
@@ -680,66 +685,48 @@
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
   // ---------------- UPDATE DRIVER LIST ----------------
+// ---------------- UPDATE DRIVER LIST ----------------
+  if (navigator.geolocation) {
 async function updateDriverList() {
   const driversList = document.getElementById("driversList");
   driversList.innerHTML = "";
 
+  // STEP 1: Get rider location
   let riderLat = null, riderLng = null;
-
-  // STEP 1: Get rider location only if browser supports
-  try {
-    if (navigator.geolocation) {
-      await new Promise(resolve => {
-        navigator.geolocation.getCurrentPosition(
-          pos => {
-            riderLat = pos.coords.latitude;
-            riderLng = pos.coords.longitude;
-            resolve();
-          },
-          () => resolve(),   // ignore geolocation error
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
-        );
-      });
-    }
-  } catch (e) {
-    console.warn("Geolocation failed:", e);
-  }
+    await new Promise(resolve => {
+      navigator.geolocation.getCurrentPosition(pos => {
+        riderLat = pos.coords.latitude;
+        riderLng = pos.coords.longitude;
+        resolve();
+      }, resolve);
+    });
 
   try {
-    const res = await fetch("/showDrivers");
-    const out = await res.json();
-    let drivers = out.drivers || [];
+    const res = await fetch("/showDrivers", { method: "GET" });
+    let drivers = (await res.json()).drivers;
 
-    if (drivers.length === 0) {
+    if (!drivers || drivers.length === 0) {
       driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
       return;
     }
 
-    // STEP 2: Compute distance (fast + safe)
-    drivers.forEach(d => {
-      if (
-        riderLat !== null &&
-        riderLng !== null &&
-        d.Driver_lat &&
-        d.Driver_lng
-      ) {
+    // STEP 2: Add distance to each driver
+    drivers = drivers.map(d => {
+      if (d.Driver_lat && d.Driver_lng && riderLat && riderLng) {
         d.distance = getDistanceKm(
-          riderLat,
-          riderLng,
-          Number(d.Driver_lat),
-          Number(d.Driver_lng)
+          riderLat, riderLng,
+          Number(d.Driver_lat), Number(d.Driver_lng)
         );
       } else {
-        d.distance = Number.POSITIVE_INFINITY;
+        d.distance = Infinity;
       }
+      return d;
     });
 
-    // STEP 3: Sort (nearest first) — super fast
+    // STEP 3: Sort by nearest
     drivers.sort((a, b) => a.distance - b.distance);
 
-    // STEP 4: Render
-    const frag = document.createDocumentFragment(); // faster DOM rendering
-
+    // STEP 4: Display
     drivers.forEach(d => {
       if (!d.Rider1_id || !d.Rider2_id) {
         const div = document.createElement("div");
@@ -747,14 +734,10 @@ async function updateDriverList() {
 
         div.innerHTML = `
           <span>
-            🚗 ${d.name || "Unknown"} (${d.mobile || "N/A"})
+            🚗 ${d.name} (${d.mobile})
             <br>
             <small style='color:#0078ff;'>
-              ${
-                d.distance === Infinity
-                  ? "Distance unavailable"
-                  : d.distance.toFixed(2) + " km away"
-              }
+              ${d.distance === Infinity ? "Distance unavailable" : d.distance.toFixed(2) + " km away"}
             </small>
           </span>
         `;
@@ -764,18 +747,16 @@ async function updateDriverList() {
         btn.onclick = () => bookDriver(d.id);
 
         div.appendChild(btn);
-        frag.appendChild(div);
+        driversList.appendChild(div);
       }
     });
-
-    driversList.appendChild(frag);
 
   } catch (error) {
     console.error(error);
     driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
   }
 }
-
+}
 window.updateDriverList = updateDriverList;
 
   // ---------------- BOOK DRIVER ----------------
