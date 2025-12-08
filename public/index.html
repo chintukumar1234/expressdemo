@@ -685,77 +685,92 @@
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
   // ---------------- UPDATE DRIVER LIST ----------------
-
+// ---------------- FAST & CLEAN UPDATE DRIVER LIST ----------------
 async function updateDriverList() {
   const driversList = document.getElementById("driversList");
   driversList.innerHTML = "";
 
-  // STEP 1: Get rider location
+  // --- STEP 1: Get rider location FAST ---
   let riderLat = null, riderLng = null;
 
   if (navigator.geolocation) {
-    await new Promise(resolve => {
-      navigator.geolocation.getCurrentPosition(pos => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
         riderLat = pos.coords.latitude;
         riderLng = pos.coords.longitude;
-        resolve();
-      }, resolve);
-    });
+        // continue after location (async)
+        loadDrivers(riderLat, riderLng);
+      },
+      () => {
+        // location denied → still load drivers
+        loadDrivers(null, null);
+      },
+      {
+        enableHighAccuracy: false, // faster
+        maximumAge: 5000,          // use recent cached GPS (fastest)
+        timeout: 2000              // if no GPS in 2 seconds → skip
+      }
+    );
+  } else {
+    loadDrivers(null, null);
   }
 
-  try {
-    const res = await fetch("/showDrivers", { method: "GET" });
-    let drivers = (await res.json()).drivers;
+  // --- STEP 2: Load drivers (separate function makes it faster) ---
+  async function loadDrivers(rLat, rLng) {
+    try {
+      const res = await fetch("/showDrivers", { method: "GET" });
+      let drivers = (await res.json()).drivers;
 
-    if (!drivers || drivers.length === 0) {
-      driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
-      return;
+      if (!drivers || drivers.length === 0) {
+        driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
+        return;
+      }
+
+      // --- STEP 3: Calculate distance ---
+      drivers = drivers.map(d => {
+        if (d.Driver_lat && d.Driver_lng && rLat != null && rLng != null) {
+          d.distance = getDistanceKm(
+            rLat, rLng,
+            Number(d.Driver_lat), Number(d.Driver_lng)
+          );
+        } else {
+          d.distance = Infinity;
+        }
+        return d;
+      });
+
+      // --- STEP 4: Sort by nearest ---
+      drivers.sort((a, b) => a.distance - b.distance);
+
+      // --- STEP 5: Display ---
+      drivers.forEach(d => {
+        if (!d.Rider1_id || !d.Rider2_id) {
+          const div = document.createElement("div");
+          div.className = "driverItem";
+
+          div.innerHTML = `
+            <span>
+              🚗 ${d.name} (${d.mobile})
+              <br>
+              <small style='color:#0078ff;'>
+                ${d.distance === Infinity ? "Distance unavailable" : d.distance.toFixed(2) + " km away"}
+              </small>
+            </span>
+          `;
+
+          const btn = document.createElement("button");
+          btn.textContent = "Book";
+          btn.onclick = () => bookDriver(d.id);
+
+          div.appendChild(btn);
+          driversList.appendChild(div);
+        }
+      });
+
+    } catch (error) {
+      console.error(error);
+      driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
     }
-
-    // STEP 2: Add distance to each driver
-    drivers = drivers.map(d => {
-      if (d.Driver_lat && d.Driver_lng && riderLat && riderLng) {
-        d.distance = getDistanceKm(
-          riderLat, riderLng,
-          Number(d.Driver_lat), Number(d.Driver_lng)
-        );
-      } else {
-        d.distance = Infinity;
-      }
-      return d;
-    });
-
-    // STEP 3: Sort by nearest
-    drivers.sort((a, b) => a.distance - b.distance);
-
-    // STEP 4: Display
-    drivers.forEach(d => {
-      if (!d.Rider1_id || !d.Rider2_id) {
-        const div = document.createElement("div");
-        div.className = "driverItem";
-
-        div.innerHTML = `
-          <span>
-            🚗 ${d.name} (${d.mobile})
-            <br>
-            <small style='color:#0078ff;'>
-              ${d.distance === Infinity ? "Distance unavailable" : d.distance.toFixed(2) + " km away"}
-            </small>
-          </span>
-        `;
-
-        const btn = document.createElement("button");
-        btn.textContent = "Book";
-        btn.onclick = () => bookDriver(d.id);
-
-        div.appendChild(btn);
-        driversList.appendChild(div);
-      }
-    });
-
-  } catch (error) {
-    console.error(error);
-    driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
   }
 }
 window.updateDriverList = updateDriverList;
