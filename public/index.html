@@ -448,6 +448,54 @@
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+  .driverSpinBoxVertical {
+  width: 80%;
+  margin: 20px auto;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 15px;
+  text-align: center;
+  font-family: Arial, sans-serif;
+  font-size: 18px;
+  color: #333;
+  border: 2px solid #0078ff;
+  box-shadow: 0 0 12px rgba(0,0,0,0.15);
+  
+  animation: spinVertical 1.2s infinite linear;
+  transform-style: preserve-3d;
+}
+
+.spinTextVertical {
+  font-size: 16px;
+  color: #0078ff;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
+.spinDriverVertical {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.mobileVertical {
+  font-size: 16px;
+  color: #555;
+}
+
+/* Vertical flip (X-axis rotation) */
+@keyframes spinVertical {
+  0% {
+    transform: rotateX(0deg);
+  }
+  50% {
+    transform: rotateX(90deg);
+  }
+  100% {
+    transform: rotateX(180deg);
+  }
+}
+
   </style>
 </head>
 <body>
@@ -684,96 +732,138 @@
 
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
-  // ---------------- UPDATE DRIVER LIST ----------------
-// ---------------- FAST & CLEAN UPDATE DRIVER LIST ----------------
+// -------- SPINNER DRIVERS (CIRCULAR LINKED LIST STYLE) ----------
+let spinnerIndex = 0;
+let spinnerInterval = null;
+
+function startDriverSpinner(drivers) {
+  const driversList = document.getElementById("driversList");
+
+  // If spinner already running → do nothing
+  if (spinnerInterval !== null) return;
+
+  spinnerInterval = setInterval(() => {
+    if (drivers.length === 0) return;
+
+    const d = drivers[spinnerIndex % drivers.length]; // circular
+    spinnerIndex++;
+
+    driversList.innerHTML = `
+  <div class="driverSpinBoxVertical">
+    <div class="spinTextVertical">🔄 Finding nearest driver…</div>
+    <div class="spinDriverVertical">
+      🚗 ${d.name}  
+      <span class="mobileVertical">(${d.mobile})</span>
+    </div>
+  </div>
+`;
+
+  }, 700); // change driver every 0.7 sec
+}
+
+function stopDriverSpinner() {
+  if (spinnerInterval !== null) {
+    clearInterval(spinnerInterval);
+    spinnerInterval = null;
+  }
+}
+// ---------- FAST LOCATION FUNCTION ----------
+function fastLocation() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
+
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      }),
+      () => resolve(null),
+      { timeout: 2000, enableHighAccuracy: true } // fast
+    );
+  });
+}
+
+
+// ---------- MAIN FUNCTION ----------
 async function updateDriverList() {
   const driversList = document.getElementById("driversList");
   driversList.innerHTML = "";
 
-  // --- STEP 1: Get rider location FAST ---
-  let riderLat = null, riderLng = null;
+  // STEP 1: Load drivers first
+  let res = await fetch("/showDrivers");
+  let drivers = (await res.json()).drivers;
 
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        riderLat = pos.coords.latitude;
-        riderLng = pos.coords.longitude;
-        // continue after location (async)
-        loadDrivers(riderLat, riderLng);
-      },
-      () => {
-        // location denied → still load drivers
-        loadDrivers(null, null);
-      },
-      {
-        enableHighAccuracy: false, // faster
-        maximumAge: 5000,          // use recent cached GPS (fastest)
-        timeout: 2000              // if no GPS in 2 seconds → skip
-      }
-    );
-  } else {
-    loadDrivers(null, null);
+  if (!drivers || drivers.length === 0) {
+    driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
+    return;
   }
 
-  // --- STEP 2: Load drivers (separate function makes it faster) ---
-  async function loadDrivers(rLat, rLng) {
-    try {
-      const res = await fetch("/showDrivers", { method: "GET" });
-      let drivers = (await res.json()).drivers;
+  // start spinning driver list (circular)
+  startDriverSpinner(drivers);
 
-      if (!drivers || drivers.length === 0) {
-        driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
-        return;
-      }
+  // STEP 2: Fast rider location
+  const rider = await fastLocation();
 
-      // --- STEP 3: Calculate distance ---
-      drivers = drivers.map(d => {
-        if (d.Driver_lat && d.Driver_lng && rLat != null && rLng != null) {
-          d.distance = getDistanceKm(
-            rLat, rLng,
-            Number(d.Driver_lat), Number(d.Driver_lng)
-          );
-        } else {
-          d.distance = Infinity;
-        }
-        return d;
-      });
+  // If GPS not available → keep spinning & stop here
+  if (!rider) {
+    console.warn("GPS not found yet, keeping spinner...");
+    return;
+  }
 
-      // --- STEP 4: Sort by nearest ---
-      drivers.sort((a, b) => a.distance - b.distance);
+  // STOP SPINNER NOW (GPS FOUND)
+  stopDriverSpinner();
 
-      // --- STEP 5: Display ---
-      drivers.forEach(d => {
-        if (!d.Rider1_id || !d.Rider2_id) {
-          const div = document.createElement("div");
-          div.className = "driverItem";
 
-          div.innerHTML = `
-            <span>
-              🚗 ${d.name} (${d.mobile})
-              <br>
-              <small style='color:#0078ff;'>
-                ${d.distance === Infinity ? "Distance unavailable" : d.distance.toFixed(2) + " km away"}
-              </small>
-            </span>
-          `;
-
-          const btn = document.createElement("button");
-          btn.textContent = "Book";
-          btn.onclick = () => bookDriver(d.id);
-
-          div.appendChild(btn);
-          driversList.appendChild(div);
-        }
-      });
-
-    } catch (error) {
-      console.error(error);
-      driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
+  // STEP 3: Distance calculation
+  drivers = drivers.map(d => {
+    if (d.Driver_lat && d.Driver_lng) {
+      d.distance = getDistanceKm(
+        rider.lat, rider.lng,
+        Number(d.Driver_lat), Number(d.Driver_lng)
+      );
+    } else {
+      d.distance = Infinity;
     }
-  }
+    return d;
+  });
+
+  // STEP 4: Sort by nearest
+  drivers.sort((a, b) => a.distance - b.distance);
+
+  // STEP 5: Show final list
+  driversList.innerHTML = "";
+
+  drivers.forEach(d => {
+    if (!d.Rider1_id || !d.Rider2_id) {
+
+      const div = document.createElement("div");
+      div.className = "driverItem";
+
+      div.innerHTML = `
+        <span>
+          🚗 ${d.name} (${d.mobile}) <br>
+          <small style="color:#0078ff;">
+            ${
+              d.distance === Infinity
+                ? "Distance not available"
+                : d.distance.toFixed(2) + " km away"
+            }
+          </small>
+        </span>
+      `;
+
+      const btn = document.createElement("button");
+      btn.textContent = "Book";
+      btn.onclick = () => bookDriver(d.id);
+
+      div.appendChild(btn);
+      driversList.appendChild(div);
+    }
+  });
 }
+
 window.updateDriverList = updateDriverList;
+
 
   // ---------------- BOOK DRIVER ----------------
   async function bookDriver(driverId) {
