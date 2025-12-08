@@ -686,77 +686,100 @@
 }
   // ---------------- UPDATE DRIVER LIST ----------------
 // ---------------- UPDATE DRIVER LIST ----------------
-  if (navigator.geolocation) {
 async function updateDriverList() {
   const driversList = document.getElementById("driversList");
-  driversList.innerHTML = "";
+  driversList.textContent = ""; // faster than innerHTML
 
-  // STEP 1: Get rider location
+  // --- STEP 1: Get rider location with timeout ---
   let riderLat = null, riderLng = null;
-    await new Promise(resolve => {
-      navigator.geolocation.getCurrentPosition(pos => {
-        riderLat = pos.coords.latitude;
-        riderLng = pos.coords.longitude;
-        resolve();
-      }, resolve);
-    });
+
+  if (navigator.geolocation) {
+    await Promise.race([
+      new Promise(resolve => {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            riderLat = pos.coords.latitude;
+            riderLng = pos.coords.longitude;
+            resolve();
+          },
+          () => resolve()
+        );
+      }),
+      new Promise(r => setTimeout(r, 1500)) // 1.5 sec timeout
+    ]);
+  }
 
   try {
-    const res = await fetch("/showDrivers", { method: "GET" });
-    let drivers = (await res.json()).drivers;
+    const res = await fetch("/showDrivers");
+    const data = await res.json();
+    const drivers = data.drivers;
 
     if (!drivers || drivers.length === 0) {
-      driversList.innerHTML = "<p style='color:#888;'>No available drivers found.</p>";
+      driversList.innerHTML = "<p style='color:#888;'>No available drivers.</p>";
       return;
     }
 
-    // STEP 2: Add distance to each driver
-    drivers = drivers.map(d => {
-      if (d.Driver_lat && d.Driver_lng && riderLat && riderLng) {
+    // ---- STEP 2: Sort by nearest (only available drivers) ----
+    const availableDrivers = [];
+
+    for (const d of drivers) {
+      if (d.Rider1_id && d.Rider2_id) continue; // skip full driver
+
+      if (riderLat && riderLng && d.Driver_lat && d.Driver_lng) {
         d.distance = getDistanceKm(
           riderLat, riderLng,
           Number(d.Driver_lat), Number(d.Driver_lng)
         );
       } else {
-        d.distance = Infinity;
+        d.distance = Number.MAX_SAFE_INTEGER;
       }
-      return d;
-    });
 
-    // STEP 3: Sort by nearest
-    drivers.sort((a, b) => a.distance - b.distance);
+      availableDrivers.push(d);
+    }
 
-    // STEP 4: Display
-    drivers.forEach(d => {
-      if (!d.Rider1_id || !d.Rider2_id) {
-        const div = document.createElement("div");
-        div.className = "driverItem";
+    if (availableDrivers.length === 0) {
+      driversList.innerHTML = "<p style='color:#888;'>No free drivers.</p>";
+      return;
+    }
 
-        div.innerHTML = `
-          <span>
-            🚗 ${d.name} (${d.mobile})
-            <br>
-            <small style='color:#0078ff;'>
-              ${d.distance === Infinity ? "Distance unavailable" : d.distance.toFixed(2) + " km away"}
-            </small>
-          </span>
-        `;
+    availableDrivers.sort((a, b) => a.distance - b.distance);
 
-        const btn = document.createElement("button");
-        btn.textContent = "Book";
-        btn.onclick = () => bookDriver(d.id);
+    // --- STEP 3: FAST DOM rendering using DocumentFragment ---
+    const fragment = document.createDocumentFragment();
 
-        div.appendChild(btn);
-        driversList.appendChild(div);
-      }
-    });
+    for (const d of availableDrivers) {
+      const div = document.createElement("div");
+      div.className = "driverItem";
 
-  } catch (error) {
-    console.error(error);
+      const availableDistance =
+        d.distance === Number.MAX_SAFE_INTEGER
+          ? "Distance unavailable"
+          : d.distance.toFixed(2) + " km away";
+
+      div.innerHTML = `
+        <span>
+          🚗 ${d.name} (${d.mobile})
+          <br>
+          <small style='color:#0078ff;'>${availableDistance}</small>
+        </span>
+      `;
+
+      const btn = document.createElement("button");
+      btn.textContent = "Book";
+      btn.onclick = () => bookDriver(d.id);
+      div.appendChild(btn);
+
+      fragment.appendChild(div);
+    }
+
+    driversList.appendChild(fragment);
+
+  } catch (e) {
+    console.error(e);
     driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
   }
 }
-}
+
 window.updateDriverList = updateDriverList;
 
   // ---------------- BOOK DRIVER ----------------
