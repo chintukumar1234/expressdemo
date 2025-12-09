@@ -686,7 +686,7 @@
 }
 async function updateDriverList() {
   const driversList = document.getElementById("driversList");
-  driversList.innerHTML = "";
+    driversList.innerHTML = "<p>🔍 Finding drivers......</p>";
 
   // STEP 1 — Fast location fetch
   let riderLat = null, riderLng = null;
@@ -735,6 +735,7 @@ async function updateDriverList() {
     const fragment = document.createDocumentFragment();
 
     nearbyDrivers.forEach(d => {
+      driversList.innerHTML = "";
       const div = document.createElement("div");
       div.className = "driverItem";
 
