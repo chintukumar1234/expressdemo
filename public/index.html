@@ -684,7 +684,6 @@
 
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
-  // ---------------- UPDATE DRIVER LIST ----------------
 async function updateDriverList() {
   const driversList = document.getElementById("driversList");
   driversList.innerHTML = "";
@@ -763,8 +762,6 @@ async function updateDriverList() {
     driversList.innerHTML = "<p style='color:red;'>Error loading drivers!</p>";
   }
 }
-
-
 window.updateDriverList = updateDriverList;
 
   // ---------------- BOOK DRIVER ----------------
@@ -867,7 +864,6 @@ window.updateDriverList = updateDriverList;
 
     if (!loginGmail) { alert("Please enter the gmail"); return; }
     if (!loginPassword) { alert("Please enter the password"); return; }
-
     fetch("/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -879,6 +875,10 @@ window.updateDriverList = updateDriverList;
       if (data.error) {
         alert(data.error);
       } else {
+        if (data.admin === true) {
+        window.location.href = "driverdetail.html";
+        return;
+      }
         const userId = data.loggedInUser.id;
         localStorage.setItem("userId", userId);
         window.location.href = "message.html";

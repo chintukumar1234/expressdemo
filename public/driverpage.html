@@ -196,27 +196,6 @@
 
     return allDrivers.find(d => d.id === driverId) || null;
   }
-
-  async function deleteDriverRemote(driverId) {
-    try {
-      const r = await fetch(API_BASE + "/driver/" + encodeURIComponent(driverId), {
-        method: "DELETE"
-      });
-      if (r.ok) return true;
-    } catch {}
-
-    try {
-      const r2 = await fetch(API_BASE + "/admin/deleteDriver", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: driverId })
-      });
-      if (r2.ok) return true;
-    } catch {}
-
-    return false;
-  }
-
   // ============================
   // RENDER TABLE
   // ============================
@@ -238,39 +217,20 @@
         <td>${d.name || "-"}</td>
         <td>${d.online ? "🟢On" : "🔴Off"}</td>
         <td>
-          <div class="small">R1: ${d.Rider1_id || "-"} — Code ${d.Booking1_code || "-"}</div>
-          <div class="small" style="margin-top:6px;">R2: ${d.Rider2_id || "-"} — Code ${d.Booking2_code || "-"}</div>
+          <div class="small">R1: ${d.Rider1_id || "-"} Code: ${d.Booking1_code || "-"}</div>
+          <div class="small" style="margin-top:6px;">R2: ${d.Rider2_id || "-"} Code: ${d.Booking2_code || "-"}</div>
+        </td>
+        <td>
           <div class="actions">
             <button class="btn secondary" data-driver="${d.id}" data-rider="${d.Rider1_id || ""}" data-action="view-r">View R1</button>
             <button class="btn secondary" data-driver="${d.id}" data-rider="${d.Rider2_id || ""}" data-action="view-r">View R2</button>
           </div>
         </td>
-        <td>
-          <button class="btn" data-id="${d.id}" data-action="delete">Delete</button>
-        </td>
       `;
 
       tbody.appendChild(tr);
     }
-
     driverCountEl.textContent = count;
-
-    tbody.querySelectorAll('[data-action="delete"]').forEach(btn => {
-      btn.onclick = async () => {
-        const code = prompt("Enter admin code:");
-        if (code !== "Chintu@Admin2025") return alert("Invalid code");
-
-        if (!confirm("Delete this driver?")) return;
-
-        const ok = await deleteDriverRemote(btn.dataset.id);
-        if (ok) {
-          alert("Deleted");
-          refreshDrivers();
-        } else {
-          alert("Failed");
-        }
-      };
-    });
 
     tbody.querySelectorAll('[data-action="view-r"]').forEach(btn => {
       btn.onclick = () => {
