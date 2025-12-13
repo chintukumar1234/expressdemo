@@ -374,29 +374,42 @@ function createRiderMarker(lat, lng, riderId) {
 function createRoute(slotKey) {
   try {
     if (!driverMarker || !slots[slotKey].marker) return;
-    if (slots[slotKey].route) { try { map.removeControl(slots[slotKey].route); } catch(e) {} slots[slotKey].route = null; }
+
+    if (slots[slotKey].route) {
+      map.removeLayer(slots[slotKey].route);
+      slots[slotKey].route = null;
+    }
 
     const profile = routeMode === "bike" ? "bike" : "car";
     const color = slotKey === "s1" ? "#2a7cff" : "#16a34a";
     const dash = slotKey === "s2" ? "6,8" : null;
 
-    slots[slotKey].route = L.Routing.control({
-      waypoints: [ driverMarker.getLatLng(), slots[slotKey].marker.getLatLng() ],
-      router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1', profile }),
-      routeWhileDragging: false,
-      addWaypoints: false,
-      draggableWaypoints: false,
-      createMarker: () => null,
-      show: false,
-      lineOptions: { styles: [{ color, opacity:0.9, weight:5, dashArray: dash }] }
-    }).addTo(map);
+    const start = driverMarker.getLatLng();
+    const end = slots[slotKey].marker.getLatLng();
 
-    if (autoCenter) {
-      try {
-        const bounds = L.latLngBounds([ driverMarker.getLatLng(), slots[slotKey].marker.getLatLng() ]);
-        map.fitBounds(bounds, { padding: [50,50] });
-      } catch(e){}
-    }
+    const url = `https://graphhopper.com/api/1/route?` +
+      `point=${start.lat},${start.lng}` +
+      `&point=${end.lat},${end.lng}` +
+      `&vehicle=${profile}` +
+      `&points_encoded=false` +
+      `&key=14d5df0f-7a0c-44ad-956e-10967f7cdd0b`;
+
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        const coords = data.paths[0].points.coordinates.map(c => [c[1], c[0]]);
+        slots[slotKey].route = L.polyline(coords, {
+          color,
+          weight: 5,
+          opacity: 0.9,
+          dashArray: dash
+        }).addTo(map);
+
+        if (autoCenter) {
+          map.fitBounds(slots[slotKey].route.getBounds(), { padding: [50, 50] });
+        }
+      });
+
   } catch (e) {
     console.error("createRoute error:", e);
   }
