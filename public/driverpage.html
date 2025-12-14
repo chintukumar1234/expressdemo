@@ -21,7 +21,16 @@
     #searchInput { padding: 10px 12px; border-radius: 10px; border: 1px solid #d0d6df; width: 320px; font-size: 15px; outline: none; transition: 0.2s; }
     #searchInput:focus { border-color: var(--accent); box-shadow: 0 0 4px var(--accent); }
     .tableWrap { background: var(--card-bg); border-radius: 10px; padding: 10px; box-shadow: 0 8px 20px rgba(0,0,0,0.05); overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 650px; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      border-collapse: collapse;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      backdrop-filter: blur(6px);
+      margin-bottom: 40px;
+    }
     th, td { padding: 10px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: top; }
     th { background: var(--accent); color: white; text-transform: uppercase; letter-spacing: 0.03em; }
     tr.onlineRow:hover { background: #ecfdf5; } tr.offlineRow:hover { background: #fff1f1; }
@@ -127,9 +136,10 @@
   // ============================
   // CONFIG
   // ============================
-  const API_BASE = "";
+  const API_BASE = ""; // your backend API
   const POLL_DRIVERS_MS = 12000;
   const POLL_DRIVER_MS = 3000;
+  const GRAPHHOPPER_API_KEY = "14d5df0f-7a0c-44ad-956e-10967f7cdd0b"; // replace with your key
 
   // ============================
   // STATE
@@ -196,6 +206,7 @@
 
     return allDrivers.find(d => d.id === driverId) || null;
   }
+
   // ============================
   // RENDER TABLE
   // ============================
@@ -206,7 +217,6 @@
 
     for (const d of allDrivers) {
       if (!d) continue;
-
       if (q && !(d.name || "").toLowerCase().includes(q)) continue;
 
       count++;
@@ -227,7 +237,6 @@
           </div>
         </td>
       `;
-
       tbody.appendChild(tr);
     }
     driverCountEl.textContent = count;
@@ -280,53 +289,63 @@
   }
 
   // ============================
-  // ROUTES (OSRM)
+  // ROUTES (GraphHopper)
   // ============================
-  async function getOsrmRoute(a, b) {
-    try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
-      const res = await fetch(url);
-      const j = await res.json();
-      if (!j.routes || !j.routes[0]) return null;
+  const routeCache = {};
 
-      return j.routes[0].geometry.coordinates.map(c => ({
-        lat: c[1],
-        lng: c[0]
-      }));
-    } catch {
+  async function fetchGraphHopperRoute(a, b, vehicle = "car") {
+    const url = `https://graphhopper.com/api/1/route?point=${a.lat},${a.lng}&point=${b.lat},${b.lng}&vehicle=${vehicle}&points_encoded=false&key=${GRAPHHOPPER_API_KEY}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.paths || !data.paths[0]) return null;
+      return data.paths[0].points.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+    } catch (e) {
+      console.error("GraphHopper route error:", e);
       return null;
     }
+  }
+
+  async function getOsrmRoute(a, b) {
+    const key = `${a.lat},${a.lng}_${b.lat},${b.lng}`;
+    if (routeCache[key]) return routeCache[key];
+    const coords = await fetchGraphHopperRoute(a, b);
+    if (coords) routeCache[key] = coords;
+    return coords;
   }
 
   async function recalcRoutes(origin, riders) {
     routeLayers.forEach(l => l.remove());
     routeLayers = [];
 
-    for (const r of riders) {
+    for (let i = 0; i < riders.length; i++) {
+      const r = riders[i];
       const coords = await getOsrmRoute(origin, r);
       if (!coords) continue;
 
       const line = L.polyline(coords, { color: "#0078ff", weight: 5 }).addTo(mapInstance);
       routeLayers.push(line);
+
+      // 200ms delay to avoid hitting GraphHopper rate limits
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 
   // ============================
-  // OPEN MAP POPUP
+  // DRIVER ICON
   // ============================
-  // ======================
-// Custom Driver Icon
-// ======================
-const driverIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/3448/3448339.png", // driver icon image
-  iconSize: [45, 45],
-  iconAnchor: [22, 45],
-  popupAnchor: [0, -40]
-});
+  const driverIcon = L.icon({
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/3448/3448339.png",
+    iconSize: [45, 45],
+    iconAnchor: [22, 45],
+    popupAnchor: [0, -40]
+  });
 
+  // ============================
+  // OPEN MAP FOR DRIVER
+  // ============================
   async function openMapForDriver(driverId, riderId) {
     cleanupMap();
-
     mapPopup.style.display = "flex";
 
     activeDriverId = driverId;
@@ -338,92 +357,41 @@ const driverIcon = L.icon({
       return closeMapPopup();
     }
 
-    mapInstance = L.map(mapCanvas).setView(
-      [Number(d.Driver_lat), Number(d.Driver_lng)],
-      14
-    );
+    mapInstance = L.map(mapCanvas).setView([Number(d.Driver_lat), Number(d.Driver_lng)], 14);
 
-    const street = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19
-    }).addTo(mapInstance);
-
-    const sat = L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      { maxZoom: 19 }
-    );
-
+    const street = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(mapInstance);
+    const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19 });
     L.control.layers({ Street: street, Satellite: sat }).addTo(mapInstance);
 
-      driverMarker = L.marker(
-        [Number(d.Driver_lat), Number(d.Driver_lng)],
-        { icon: driverIcon }
-      ).addTo(mapInstance);
-
+    driverMarker = L.marker([Number(d.Driver_lat), Number(d.Driver_lng)], { icon: driverIcon }).addTo(mapInstance);
 
     const riderPoints = [];
-    if (d.Rider1_lat && d.Rider1_lng)
-      riderPoints.push({
-        lat: Number(d.Rider1_lat),
-        lng: Number(d.Rider1_lng),
-        id: d.Rider1_id
-      });
-    if (d.Rider2_lat && d.Rider2_lng)
-      riderPoints.push({
-        lat: Number(d.Rider2_lat),
-        lng: Number(d.Rider2_lng),
-        id: d.Rider2_id
-      });
+    if (d.Rider1_lat && d.Rider1_lng) riderPoints.push({ lat: Number(d.Rider1_lat), lng: Number(d.Rider1_lng), id: d.Rider1_id });
+    if (d.Rider2_lat && d.Rider2_lng) riderPoints.push({ lat: Number(d.Rider2_lat), lng: Number(d.Rider2_lng), id: d.Rider2_id });
 
-    riderMarkers = riderPoints.map(r =>
-      L.marker([r.lat, r.lng]).addTo(mapInstance)
-    );
+    riderMarkers = riderPoints.map(r => L.marker([r.lat, r.lng]).addTo(mapInstance));
 
-    if (riderPoints.length)
-      recalcRoutes(
-        { lat: Number(d.Driver_lat), lng: Number(d.Driver_lng) },
-        riderPoints
-      );
+    if (riderPoints.length) recalcRoutes({ lat: Number(d.Driver_lat), lng: Number(d.Driver_lng) }, riderPoints);
 
     mapHeader.textContent = `Driver: ${d.name || d.id} — ${d.mobile || ""}`;
 
-    // ============================ g2
-    // LIVE POLLING DRIVER EVERY 3s
+    // ============================
+    // LIVE POLLING
     // ============================
     livePollInterval = setInterval(async () => {
       const latest = await getDriverById(driverId);
       if (!latest) return;
 
-      if (latest.Driver_lat && latest.Driver_lng) {
-        driverMarker.setLatLng([
-          Number(latest.Driver_lat),
-          Number(latest.Driver_lng)
-        ]);
-      }
+      if (latest.Driver_lat && latest.Driver_lng) driverMarker.setLatLng([Number(latest.Driver_lat), Number(latest.Driver_lng)]);
 
-      // update riders
       const pts = [];
-      if (latest.Rider1_lat && latest.Rider1_lng)
-        pts.push({
-          lat: Number(latest.Rider1_lat),
-          lng: Number(latest.Rider1_lng)
-        });
-      if (latest.Rider2_lat && latest.Rider2_lng)
-        pts.push({
-          lat: Number(latest.Rider2_lat),
-          lng: Number(latest.Rider2_lng)
-        });
+      if (latest.Rider1_lat && latest.Rider1_lng) pts.push({ lat: Number(latest.Rider1_lat), lng: Number(latest.Rider1_lng) });
+      if (latest.Rider2_lat && latest.Rider2_lng) pts.push({ lat: Number(latest.Rider2_lat), lng: Number(latest.Rider2_lng) });
 
       riderMarkers.forEach(m => m.remove());
       riderMarkers = pts.map(p => L.marker([p.lat, p.lng]).addTo(mapInstance));
 
-      if (pts.length)
-        recalcRoutes(
-          {
-            lat: Number(latest.Driver_lat),
-            lng: Number(latest.Driver_lng)
-          },
-          pts
-        );
+      if (pts.length) recalcRoutes({ lat: Number(latest.Driver_lat), lng: Number(latest.Driver_lng) }, pts);
     }, POLL_DRIVER_MS);
 
     // ============================
@@ -437,23 +405,17 @@ const driverIcon = L.icon({
         }
         return;
       }
-
       if (!activeRiderId) {
         alert("No rider selected");
         streamToggle.checked = false;
         return;
       }
-
       liveWatchId = navigator.geolocation.watchPosition(
         async pos => {
           await fetch(API_BASE + "/riderLocation", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              riderId: activeRiderId,
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude
-            })
+            body: JSON.stringify({ riderId: activeRiderId, lat: pos.coords.latitude, lng: pos.coords.longitude })
           });
         },
         err => console.error(err),
@@ -475,12 +437,16 @@ const driverIcon = L.icon({
   window.closeMapPopup = closeMapPopup;
 
 })();
- document.addEventListener('click', e => {
-    if (e.target.id === 'toggleFullscreen') {
-      const el = document.getElementById('mapBox');
-      if (!document.fullscreenElement) { el.requestFullscreen().catch(err => console.error(err)); } else { document.exitFullscreen(); }
+document.addEventListener('click', e => {
+  if (e.target.id === 'toggleFullscreen') {
+    const el = document.getElementById('mapBox');
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().catch(err => console.error(err));
+    } else {
+      document.exitFullscreen();
     }
-  });
+  }
+});
 </script>
 </body>
 </html>
